@@ -1,23 +1,511 @@
 import { useMemo, useState } from "react";
-import { FaArrowUp, FaBars, FaBoxOpen, FaChartBar, FaChartLine, FaChevronDown, FaChevronRight, FaCircle, FaLightbulb, FaMapMarkerAlt, FaSearch, FaShoppingCart, FaSlidersH, FaTag, FaTrophy } from "react-icons/fa";
+import {
+  FaArrowUp,
+  FaBars,
+  FaBoxOpen,
+  FaChartBar,
+  FaChartLine,
+  FaChevronDown,
+  FaChevronRight,
+  FaCircle,
+  FaLightbulb,
+  FaMapMarkerAlt,
+  FaSearch,
+  FaShoppingCart,
+  FaSlidersH,
+  FaTag,
+  FaTrophy,
+} from "react-icons/fa";
 
 const pageStyles = `
 .descriptive-page{max-width:1170px;margin:0 auto;color:#172b5d;font-size:10px}.da-heading{display:flex;justify-content:space-between;align-items:flex-start;margin:32px 0 18px}.da-heading h1{font-size:31px;line-height:1;color:#102c8d}.da-heading p{font-size:14px;color:#7184ae;margin-top:7px}.outline-button,.insight-button{border:1px solid #cfe0fa;background:#fff;color:#1769e8;border-radius:4px;padding:9px 13px;font-size:10px;display:flex;align-items:center;gap:8px;cursor:pointer}.analysis-strip,.da-panel,.da-card{background:#fff;border:1px solid #e3ebf6;border-radius:5px;box-shadow:0 2px 7px #244b8510}.analysis-strip{min-height:48px;padding:7px 10px;display:flex;align-items:center;gap:9px}.analysis-icon{background:#1675ee;color:#fff;padding:7px;border-radius:3px;font-size:15px}.analysis-title{display:flex;flex-direction:column;min-width:120px}.analysis-title span,.panel-heading p{color:#7486a8;font-size:8px}.chips{display:flex;flex-wrap:wrap;gap:5px;flex:1}.chips span{border:1px solid #dbe7f6;border-radius:4px;padding:4px 7px;color:#304b86;white-space:nowrap}.chips svg{color:#244ec0;margin-right:3px}.analysis-strip>b{font-size:9px;color:#203e9d;white-space:nowrap}.da-cards{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:9px 0}.da-card{padding:9px;display:flex;gap:10px;align-items:center}.da-card-icon{width:35px;height:35px;display:grid;place-items:center;border-radius:5px;font-size:19px}.green{background:#e8faef;color:#10a765}.blue{background:#e9f3ff;color:#1475f5}.purple{background:#f0eaff;color:#844cf0}.orange{background:#fff1e4;color:#ff791d}.da-card span{display:block;color:#334b80;font-size:9px}.da-card strong{display:block;color:#123b93;font-size:15px;margin:2px 0}.da-card small{color:#14a864;font-weight:bold;font-size:9px}.da-card em{font-style:normal;color:#7890b5;font-weight:normal;font-size:8px}.da-grid{display:grid;gap:8px;margin-bottom:8px}.top-grid,.middle-grid,.bottom-grid{grid-template-columns:1fr 1fr}.da-panel{padding:9px 10px;min-width:0}.panel-heading{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px}.panel-heading h2{font-size:11px;color:#123b93;display:flex;align-items:center;gap:6px}.panel-heading h2 svg{color:#1475f5;font-size:15px}.panel-controls{display:flex;gap:5px}.da-select{background:#fff;border:1px solid #d9e5f5;border-radius:4px;padding:5px 8px;color:#23458e;font-size:8px;display:flex;gap:13px;align-items:center;white-space:nowrap}.da-select svg{font-size:8px}.legend{display:flex;gap:17px;color:#657da9;margin:4px 0 3px 44px;font-size:8px}.legend svg{font-size:7px;color:#1475f5}.chart{height:130px;display:flex;border-bottom:1px solid #aac0dc;margin-top:5px}.chart-y{width:38px;display:flex;flex-direction:column;justify-content:space-between;color:#7385a7;font-size:7px;padding-bottom:17px}.bars{position:relative;flex:1;display:flex;align-items:flex-end;gap:2px;padding:0 5px 19px;background:repeating-linear-gradient(to bottom,transparent 0,transparent 25px,#e8eff8 26px)}.bars i{display:block;flex:1;background:linear-gradient(#1379fa,#78affd);min-width:2px;border-radius:2px 2px 0 0}.chart-x{position:absolute;left:0;right:0;bottom:0;display:flex;justify-content:space-between;color:#7486a8;font-size:7px;text-align:center}.region-row{display:grid;grid-template-columns:20px 1fr 1.55fr 60px;align-items:center;gap:6px;margin:9px 0}.region-row>b{background:#e9f2ff;color:#3972d3;border-radius:50%;width:17px;height:17px;text-align:center;padding-top:4px}.region-row span{font-size:8px;white-space:nowrap}.region-row div{height:11px;background:#e9f0f7;border-radius:3px;overflow:hidden}.region-row i{display:block;background:#4289f8;height:100%;border-radius:3px}.region-row strong{font-size:8px;color:#243f8b}.da-table{border-collapse:collapse;width:100%;font-size:8px}.da-table th{color:#35528c;background:#f4f8fd;font-weight:600;text-align:left}.da-table th,.da-table td{padding:5px 4px;border-bottom:1px solid #e8eef6;white-space:nowrap}.da-table td:first-child,.da-table th:first-child{text-align:center;color:#3661b1}.da-table td{color:#365180}.da-table td:nth-child(2){color:#173f9a}.view-button{float:right;border:0;background:transparent;color:#1475f5;font-size:8px;margin-top:7px;cursor:pointer}.category-content{display:flex;align-items:center;gap:15px}.donut{width:145px;height:145px;flex:none;border-radius:50%;background:conic-gradient(#1475f5 0 32.1%,#f59e0b 32.1% 50.7%,#20b77a 50.7% 64.9%,#ff7043 64.9% 76.4%,#8b5cf6 76.4% 83.1%,#06b6d4 83.1% 87.5%,#f43f5e 87.5% 90.2%,#94a3b8 90.2%);display:grid;place-items:center}.donut:before{content:"";background:#fff;border-radius:50%;width:82px;height:82px;position:absolute}.donut div{position:relative;text-align:center}.donut strong,.donut span{display:block;font-size:9px;color:#193c93}.donut span{font-size:7px;color:#6e82aa;margin-top:3px}.category-list{flex:1}.category-list div{display:flex;align-items:center;gap:5px;margin:5px 0;font-size:8px}.category-list svg{font-size:8px}.category-list span{flex:1}.category-list b{color:#29478e;font-size:8px}.category-list small{color:#788db2;font-weight:normal}.insights .panel-heading{margin-bottom:5px}.insight-button{padding:6px 8px;font-size:8px}.insight-row{display:flex;gap:7px;align-items:center;border:1px solid #e0eaf6;border-radius:4px;padding:5px 7px;margin:4px 0;color:#425b8d}.insight-row b{background:#e6f0ff;color:#2871e3;border-radius:50%;min-width:15px;height:15px;text-align:center;padding-top:3px}.modal-backdrop{position:fixed;z-index:10;inset:0;background:#0824439c;display:grid;place-items:center}.da-modal{position:relative;background:#fff;width:min(750px,90vw);max-height:85vh;overflow:auto;border-radius:5px;padding:14px 16px;box-shadow:0 10px 35px #001d45aa}.da-modal h2{color:#133b96;font-size:13px}.modal-close{position:absolute;right:12px;top:8px;background:transparent;border:0;color:#183b92;font-size:22px;cursor:pointer}.modal-toolbar{display:flex;align-items:center;gap:8px;margin-bottom:9px;color:#52698f;font-size:8px}.modal-toolbar label{display:flex;align-items:center;gap:6px;border:1px solid #d8e5f6;border-radius:4px;padding:5px 8px;width:180px}.modal-toolbar input{border:0;outline:0;width:100%;font-size:8px}.pagination{display:flex;align-items:center;gap:4px;margin-top:9px;color:#5d729a}.pagination span{margin-right:auto}.pagination button{height:21px;min-width:21px;border:1px solid #dce7f5;background:#fff;color:#3c66a8;border-radius:4px;font-size:8px}.pagination .selected{background:#1475f5;color:#fff;border-color:#1475f5}@media(max-width:900px){.analysis-strip{align-items:flex-start;flex-wrap:wrap}.analysis-strip>b{width:100%;text-align:right}.top-grid,.middle-grid,.bottom-grid{grid-template-columns:1fr}.da-cards{grid-template-columns:repeat(2,1fr)}}@media(max-width:560px){.da-cards{grid-template-columns:1fr}.da-heading h1{font-size:24px}.category-content{flex-direction:column}.da-table{font-size:7px}}
 `;
 
-const provinces = [["Laguna","CALABARZON","₱ 32.84M","42,105","128,420","₱ 780.21"],["Cavite","CALABARZON","₱ 28.15M","34,902","102,331","₱ 805.12"],["Rizal","CALABARZON","₱ 18.76M","27,441","81,240","₱ 683.55"],["Batangas","CALABARZON","₱ 16.32M","22,118","65,441","₱ 738.90"],["Quezon","CALABARZON","₱ 14.87M","19,552","58,320","₱ 760.14"],["Bulacan","Central Luzon","₱ 13.28M","18,441","54,210","₱ 720.33"],["Pampanga","Central Luzon","₱ 12.41M","17,220","50,331","₱ 721.26"],["Cebu","Central Visayas","₱ 12.41M","16,902","48,112","₱ 733.14"],["Davao del Sur","Davao Region","₱ 11.18M","15,660","45,210","₱ 758.11"],["Iloilo","Western Visayas","₱ 10.93M","14,881","42,771","₱ 734.62"]];
-const products = [["Shrink Film 50cm","Shrink Wrap / Cap Seal","₱ 18.24M","12,441","48,220","₱ 1,466.23"],["Packaging Tape Clear","Tape / Adhesive","₱ 15.67M","10,231","62,441","₱ 1,532.11"],["PET Bottle 500ml","Bottle / Container","₱ 13.11M","8,551","51,220","₱ 1,533.28"],["Sticker Label Round","Label / Sticker","₱ 11.08M","7,663","98,311","₱ 1,446.02"],["Bubble Wrap 1m","Bubble Wrap / Protective Packaging","₱ 9.76M","6,884","41,552","₱ 1,417.36"],["Shrink Sleeve 30mm","Shrink Wrap / Cap Seal","₱ 9.21M","6,231","38,441","₱ 1,477.59"],["Plastic Jar 250ml","Bottle / Container","₱ 8.93M","5,992","34,220","₱ 1,491.21"],["Mailing Bag (M)","Mailer / Shrink Packaging","₱ 8.11M","5,411","29,320","₱ 1,501.63"],["Cap Seal 26mm","Shrink Wrap / Cap Seal","₱ 7.86M","5,102","31,441","₱ 1,540.22"],["Adhesive Tape Heavy Duty","Tape / Adhesive","₱ 7.21M","4,995","28,441","₱ 1,443.18"]];
-const trend = Array.from({length:48},(_,i)=>38+i*7+(i%5)*8); const regions=[["CALABARZON","₱ 98.42M",88],["NCR","₱ 76.15M",68],["Central Luzon","₱ 45.20M",49],["Western Visayas","₱ 28.76M",34],["Central Visayas","₱ 24.31M",26]]; const categories=[["Shrink Wrap / Cap Seal","₱ 113.26M","#1475f5"],["Bottle / Container","₱ 65.68M","#f59e0b"],["Tape / Adhesive","₱ 50.12M","#20b77a"],["Label / Sticker","₱ 40.56M","#ff7043"],["Packaging Accessory","₱ 23.61M","#8b5cf6"],["Mailer / Shipping Packaging","₱ 15.64M","#06b6d4"],["Bubble Wrap / Protective Packaging","₱ 9.52M","#f43f5e"],["Other / Needs Review","₱ 68.94M","#94a3b8"]];
-function SelectBox({children}){return <button className="da-select">{children}<FaChevronDown/></button>}
-function Card({icon,title,value,change,tone}){return <div className="da-card"><div className={`da-card-icon ${tone}`}>{icon}</div><div><span>{title}</span><strong>{value}</strong><small><FaArrowUp/> {change}% <em>vs. previous year</em></small></div></div>}
-function DataTable({rows,type}){return <table className="da-table"><thead><tr><th>#</th><th>{type==="province"?"Province":"Product Name"}</th><th>{type==="province"?"Region":"Category"}</th><th>Revenue</th><th>Orders</th><th>Quantity</th><th>AOV</th></tr></thead><tbody>{rows.map((row,i)=><tr key={row[0]}><td>{i+1}</td>{row.map((cell,j)=><td key={j}>{cell}</td>)}</tr>)}</tbody></table>}
-export default function DescriptiveAnalytics(){
- const [modal,setModal]=useState(null); const [query,setQuery]=useState(""); const filtered=useMemo(()=>{const data=modal==="product"?products:provinces;return data.filter(x=>x.join(" ").toLowerCase().includes(query.toLowerCase()))},[modal,query]);
- return <><style>{pageStyles}</style><style>{`.donut{position:relative}.donut:before{position:absolute;inset:31.5px;width:auto;height:auto;z-index:1}.donut div{position:relative;z-index:2}`}</style><div className="descriptive-page"><div className="da-heading"><div><h1>Descriptive Analytics</h1><p>Understand what happened in your business.</p></div><button className="outline-button"><FaSlidersH/> Edit Analysis Controls</button></div>
- <section className="analysis-strip"><div className="analysis-icon"><FaBars/></div><div className="analysis-title"><strong>Current Analysis</strong><span>Summary of your selected parameters.</span></div><div className="chips"><span>▣ Jan 2021 – Dec 2025</span><span><FaMapMarkerAlt/> CALABARZON &gt; Laguna &gt; All Cities</span><span><FaBoxOpen/> All Products</span><span><FaShoppingCart/> Completed Orders</span><span><FaChartBar/> Metric: Revenue</span><span><FaSlidersH/> Compare: Previous Year</span><span>◎ Focus: Overall Business</span></div><b>418,835 records analyzed</b></section>
- <div className="da-cards"><Card icon="₱" title="Total Revenue" value="₱ 352.48M" change="12.4" tone="green"/><Card icon={<FaShoppingCart/>} title="Total Orders" value="418,835" change="8.7" tone="blue"/><Card icon={<FaBoxOpen/>} title="Total Quantity Sold" value="1,245,320" change="10.1" tone="purple"/><Card icon={<FaTag/>} title="Average Order Value" value="₱ 841.20" change="3.4" tone="orange"/></div>
- <div className="da-grid top-grid"><section className="da-panel trend-panel"><div className="panel-heading"><div><h2><FaChartBar/> Revenue Trend</h2><p>Monthly revenue and year-over-year comparison.</p></div><div className="panel-controls"><SelectBox>Monthly</SelectBox><SelectBox>Revenue</SelectBox></div></div><div className="legend"><span><FaCircle/> Revenue (Current Period)</span><span><FaCircle/> Revenue (Previous Year)</span></div><div className="chart"><div className="chart-y"><span>₱ 25M</span><span>₱ 20M</span><span>₱ 15M</span><span>₱ 10M</span><span>₱ 5M</span><span>₱ 0</span></div><div className="bars">{trend.map((h,i)=><i style={{height:`${Math.min(96,h/2.1)}%`}} key={i}/>)}<div className="chart-x"><span>Jan<br/>2021</span><span>Jul<br/>2021</span><span>Jan<br/>2022</span><span>Jul<br/>2022</span><span>Jan<br/>2023</span><span>Jul<br/>2023</span><span>Jan<br/>2024</span><span>Jul<br/>2024</span><span>Jan<br/>2025</span><span>Dec<br/>2025</span></div></div></div></section><section className="da-panel"><div className="panel-heading"><div><h2><FaChartBar/> Top 5 Regions by Revenue</h2><p>Regions with the highest total revenue.</p></div></div>{regions.map((r,i)=><div className="region-row" key={r[0]}><b>{i+1}</b><span>{r[0]}</span><div><i style={{width:`${r[2]}%`}}/></div><strong>{r[1]}</strong></div>)}</section></div>
- <div className="da-grid middle-grid"><section className="da-panel"><div className="panel-heading"><div><h2><FaChartBar/> Top 5 Provinces by Revenue</h2><p>Provinces with the highest total revenue.</p></div></div><DataTable rows={provinces.slice(0,5)} type="province"/><button className="view-button" onClick={()=>setModal("province")}>View All Provinces <FaChevronRight/></button></section><section className="da-panel category-panel"><div className="panel-heading"><div><h2><FaChartLine/> Revenue by Product Category</h2><p>Share of total revenue by product category.</p></div><SelectBox>Revenue</SelectBox></div><div className="category-content"><div className="donut"><div><strong>₱ 352.48M</strong><span>Total Revenue</span></div></div><div className="category-list">{categories.map(c=><div key={c[0]}><FaCircle style={{color:c[2]}}/><span>{c[0]}</span><b>{c[1]} <small>(32.1%)</small></b></div>)}</div></div></section></div>
- <div className="da-grid bottom-grid"><section className="da-panel"><div className="panel-heading"><div><h2><FaTrophy/> Top 5 Products by Revenue</h2><p>Best performing products.</p></div></div><DataTable rows={products.slice(0,5)} type="product"/><button className="view-button" onClick={()=>setModal("product")}>View All Products <FaChevronRight/></button></section><section className="da-panel insights"><div className="panel-heading"><div><h2><FaLightbulb/> Key Insights</h2><p>Notable observations from the selected data.</p></div><button className="insight-button"><FaLightbulb/> Generate Insights</button></div>{["Revenue grew by 12.4% compared to the previous year, driven mainly by CALABARZON.","Shrink Wrap / Cap Seal is the top-performing category, contributing 32.1% of total revenue.","Laguna accounts for 29.6% of total revenue, making it the highest performing province.","Average order value increased by 3.4%, indicating stronger purchasing behavior.","Opportunities exist in underperforming provinces such as MIMAROPA and Caraga."].map((x,i)=><div className="insight-row" key={x}><b>{i+1}</b><span>{x}</span></div>)}</section></div>
- {modal&&<div className="modal-backdrop" onClick={()=>setModal(null)}><div className="da-modal" onClick={e=>e.stopPropagation()}><button className="modal-close" onClick={()=>setModal(null)}>×</button><h2><FaChartBar/> {modal==="province"?"All Provinces by Revenue":"All Products by Revenue"}</h2><p>Complete list with revenue and key metrics.</p><div className="modal-toolbar"><label><FaSearch/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Search..."/></label><SelectBox>Revenue (High to Low)</SelectBox><SelectBox>10</SelectBox><span>entries</span></div><DataTable rows={filtered} type={modal}/><div className="pagination"><span>Showing 1 to {Math.min(10,filtered.length)} entries</span>{["‹","1","2","3","4","5","…","9","›"].map((x,i)=><button className={x==="1"?"selected":""} key={i}>{x}</button>)}</div></div></div>}</div></>;
+const provinces = [
+  ["Laguna", "CALABARZON", "₱ 32.84M", "42,105", "128,420", "₱ 780.21"],
+  ["Cavite", "CALABARZON", "₱ 28.15M", "34,902", "102,331", "₱ 805.12"],
+  ["Rizal", "CALABARZON", "₱ 18.76M", "27,441", "81,240", "₱ 683.55"],
+  ["Batangas", "CALABARZON", "₱ 16.32M", "22,118", "65,441", "₱ 738.90"],
+  ["Quezon", "CALABARZON", "₱ 14.87M", "19,552", "58,320", "₱ 760.14"],
+  ["Bulacan", "Central Luzon", "₱ 13.28M", "18,441", "54,210", "₱ 720.33"],
+  ["Pampanga", "Central Luzon", "₱ 12.41M", "17,220", "50,331", "₱ 721.26"],
+  ["Cebu", "Central Visayas", "₱ 12.41M", "16,902", "48,112", "₱ 733.14"],
+  ["Davao del Sur", "Davao Region", "₱ 11.18M", "15,660", "45,210", "₱ 758.11"],
+  ["Iloilo", "Western Visayas", "₱ 10.93M", "14,881", "42,771", "₱ 734.62"],
+];
+const products = [
+  [
+    "Shrink Film 50cm",
+    "Shrink Wrap / Cap Seal",
+    "₱ 18.24M",
+    "12,441",
+    "48,220",
+    "₱ 1,466.23",
+  ],
+  [
+    "Packaging Tape Clear",
+    "Tape / Adhesive",
+    "₱ 15.67M",
+    "10,231",
+    "62,441",
+    "₱ 1,532.11",
+  ],
+  [
+    "PET Bottle 500ml",
+    "Bottle / Container",
+    "₱ 13.11M",
+    "8,551",
+    "51,220",
+    "₱ 1,533.28",
+  ],
+  [
+    "Sticker Label Round",
+    "Label / Sticker",
+    "₱ 11.08M",
+    "7,663",
+    "98,311",
+    "₱ 1,446.02",
+  ],
+  [
+    "Bubble Wrap 1m",
+    "Bubble Wrap / Protective Packaging",
+    "₱ 9.76M",
+    "6,884",
+    "41,552",
+    "₱ 1,417.36",
+  ],
+  [
+    "Shrink Sleeve 30mm",
+    "Shrink Wrap / Cap Seal",
+    "₱ 9.21M",
+    "6,231",
+    "38,441",
+    "₱ 1,477.59",
+  ],
+  [
+    "Plastic Jar 250ml",
+    "Bottle / Container",
+    "₱ 8.93M",
+    "5,992",
+    "34,220",
+    "₱ 1,491.21",
+  ],
+  [
+    "Mailing Bag (M)",
+    "Mailer / Shrink Packaging",
+    "₱ 8.11M",
+    "5,411",
+    "29,320",
+    "₱ 1,501.63",
+  ],
+  [
+    "Cap Seal 26mm",
+    "Shrink Wrap / Cap Seal",
+    "₱ 7.86M",
+    "5,102",
+    "31,441",
+    "₱ 1,540.22",
+  ],
+  [
+    "Adhesive Tape Heavy Duty",
+    "Tape / Adhesive",
+    "₱ 7.21M",
+    "4,995",
+    "28,441",
+    "₱ 1,443.18",
+  ],
+];
+const trend = Array.from({ length: 48 }, (_, i) => 38 + i * 7 + (i % 5) * 8);
+const regions = [
+  ["CALABARZON", "₱ 98.42M", 88],
+  ["NCR", "₱ 76.15M", 68],
+  ["Central Luzon", "₱ 45.20M", 49],
+  ["Western Visayas", "₱ 28.76M", 34],
+  ["Central Visayas", "₱ 24.31M", 26],
+];
+const categories = [
+  ["Shrink Wrap / Cap Seal", "₱ 113.26M", "#1475f5"],
+  ["Bottle / Container", "₱ 65.68M", "#f59e0b"],
+  ["Tape / Adhesive", "₱ 50.12M", "#20b77a"],
+  ["Label / Sticker", "₱ 40.56M", "#ff7043"],
+  ["Packaging Accessory", "₱ 23.61M", "#8b5cf6"],
+  ["Mailer / Shipping Packaging", "₱ 15.64M", "#06b6d4"],
+  ["Bubble Wrap / Protective Packaging", "₱ 9.52M", "#f43f5e"],
+  ["Other / Needs Review", "₱ 68.94M", "#94a3b8"],
+];
+function SelectBox({ children }) {
+  return (
+    <button className="da-select">
+      {children}
+      <FaChevronDown />
+    </button>
+  );
+}
+function Card({ icon, title, value, change, tone }) {
+  return (
+    <div className="da-card">
+      <div className={`da-card-icon ${tone}`}>{icon}</div>
+      <div>
+        <span>{title}</span>
+        <strong>{value}</strong>
+        <small>
+          <FaArrowUp /> {change}% <em>vs. previous year</em>
+        </small>
+      </div>
+    </div>
+  );
+}
+function DataTable({ rows, type }) {
+  return (
+    <table className="da-table">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>{type === "province" ? "Province" : "Product Name"}</th>
+          <th>{type === "province" ? "Region" : "Category"}</th>
+          <th>Revenue</th>
+          <th>Orders</th>
+          <th>Quantity</th>
+          <th>AOV</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((row, i) => (
+          <tr key={row[0]}>
+            <td>{i + 1}</td>
+            {row.map((cell, j) => (
+              <td key={j}>{cell}</td>
+            ))}
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+export default function DescriptiveAnalytics() {
+  const [modal, setModal] = useState(null);
+  const [query, setQuery] = useState("");
+  const filtered = useMemo(() => {
+    const data = modal === "product" ? products : provinces;
+    return data.filter((x) =>
+      x.join(" ").toLowerCase().includes(query.toLowerCase()),
+    );
+  }, [modal, query]);
+  return (
+    <>
+      <style>{pageStyles}</style>
+      <style>{`.donut{position:relative}.donut:before{position:absolute;inset:31.5px;width:auto;height:auto;z-index:1}.donut div{position:relative;z-index:2}`}</style>
+      <div className="descriptive-page">
+        <div className="da-heading">
+          <div>
+            <h1>Descriptive Analytics</h1>
+            <p>Understand what happened in your business.</p>
+          </div>
+          <button className="outline-button">
+            <FaSlidersH /> Edit Analysis Controls
+          </button>
+        </div>
+        <section className="analysis-strip">
+          <div className="analysis-icon">
+            <FaBars />
+          </div>
+          <div className="analysis-title">
+            <strong>Current Analysis</strong>
+            <span>Summary of your selected parameters.</span>
+          </div>
+          <div className="chips">
+            <span>▣ Jan 2021 – Dec 2025</span>
+            <span>
+              <FaMapMarkerAlt /> CALABARZON &gt; Laguna &gt; All Cities
+            </span>
+            <span>
+              <FaBoxOpen /> All Products
+            </span>
+            <span>
+              <FaShoppingCart /> Completed Orders
+            </span>
+            <span>
+              <FaChartBar /> Metric: Revenue
+            </span>
+            <span>
+              <FaSlidersH /> Compare: Previous Year
+            </span>
+            <span>◎ Focus: Overall Business</span>
+          </div>
+          <b>418,835 records analyzed</b>
+        </section>
+        <div className="da-cards">
+          <Card
+            icon="₱"
+            title="Total Revenue"
+            value="₱ 352.48M"
+            change="12.4"
+            tone="green"
+          />
+          <Card
+            icon={<FaShoppingCart />}
+            title="Total Orders"
+            value="418,835"
+            change="8.7"
+            tone="blue"
+          />
+          <Card
+            icon={<FaBoxOpen />}
+            title="Total Quantity Sold"
+            value="1,245,320"
+            change="10.1"
+            tone="purple"
+          />
+          <Card
+            icon={<FaTag />}
+            title="Average Order Value"
+            value="₱ 841.20"
+            change="3.4"
+            tone="orange"
+          />
+        </div>
+        <div className="da-grid top-grid">
+          <section className="da-panel trend-panel">
+            <div className="panel-heading">
+              <div>
+                <h2>
+                  <FaChartBar /> Revenue Trend
+                </h2>
+                <p>Monthly revenue and year-over-year comparison.</p>
+              </div>
+              <div className="panel-controls">
+                <SelectBox>Monthly</SelectBox>
+                <SelectBox>Revenue</SelectBox>
+              </div>
+            </div>
+            <div className="legend">
+              <span>
+                <FaCircle /> Revenue (Current Period)
+              </span>
+              <span>
+                <FaCircle /> Revenue (Previous Year)
+              </span>
+            </div>
+            <div className="chart">
+              <div className="chart-y">
+                <span>₱ 25M</span>
+                <span>₱ 20M</span>
+                <span>₱ 15M</span>
+                <span>₱ 10M</span>
+                <span>₱ 5M</span>
+                <span>₱ 0</span>
+              </div>
+              <div className="bars">
+                {trend.map((h, i) => (
+                  <i style={{ height: `${Math.min(96, h / 2.1)}%` }} key={i} />
+                ))}
+                <div className="chart-x">
+                  <span>
+                    Jan
+                    <br />
+                    2021
+                  </span>
+                  <span>
+                    Jul
+                    <br />
+                    2021
+                  </span>
+                  <span>
+                    Jan
+                    <br />
+                    2022
+                  </span>
+                  <span>
+                    Jul
+                    <br />
+                    2022
+                  </span>
+                  <span>
+                    Jan
+                    <br />
+                    2023
+                  </span>
+                  <span>
+                    Jul
+                    <br />
+                    2023
+                  </span>
+                  <span>
+                    Jan
+                    <br />
+                    2024
+                  </span>
+                  <span>
+                    Jul
+                    <br />
+                    2024
+                  </span>
+                  <span>
+                    Jan
+                    <br />
+                    2025
+                  </span>
+                  <span>
+                    Dec
+                    <br />
+                    2025
+                  </span>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section className="da-panel">
+            <div className="panel-heading">
+              <div>
+                <h2>
+                  <FaChartBar /> Top 5 Regions by Revenue
+                </h2>
+                <p>Regions with the highest total revenue.</p>
+              </div>
+            </div>
+            {regions.map((r, i) => (
+              <div className="region-row" key={r[0]}>
+                <b>{i + 1}</b>
+                <span>{r[0]}</span>
+                <div>
+                  <i style={{ width: `${r[2]}%` }} />
+                </div>
+                <strong>{r[1]}</strong>
+              </div>
+            ))}
+          </section>
+        </div>
+        <div className="da-grid middle-grid">
+          <section className="da-panel">
+            <div className="panel-heading">
+              <div>
+                <h2>
+                  <FaChartBar /> Top 5 Provinces by Revenue
+                </h2>
+                <p>Provinces with the highest total revenue.</p>
+              </div>
+            </div>
+            <DataTable rows={provinces.slice(0, 5)} type="province" />
+            <button
+              className="view-button"
+              onClick={() => setModal("province")}
+            >
+              View All Provinces <FaChevronRight />
+            </button>
+          </section>
+          <section className="da-panel category-panel">
+            <div className="panel-heading">
+              <div>
+                <h2>
+                  <FaChartLine /> Revenue by Product Category
+                </h2>
+                <p>Share of total revenue by product category.</p>
+              </div>
+              <SelectBox>Revenue</SelectBox>
+            </div>
+            <div className="category-content">
+              <div className="donut">
+                <div>
+                  <strong>₱ 352.48M</strong>
+                  <span>Total Revenue</span>
+                </div>
+              </div>
+              <div className="category-list">
+                {categories.map((c) => (
+                  <div key={c[0]}>
+                    <FaCircle style={{ color: c[2] }} />
+                    <span>{c[0]}</span>
+                    <b>
+                      {c[1]} <small>(32.1%)</small>
+                    </b>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </section>
+        </div>
+        <div className="da-grid bottom-grid">
+          <section className="da-panel">
+            <div className="panel-heading">
+              <div>
+                <h2>
+                  <FaTrophy /> Top 5 Products by Revenue
+                </h2>
+                <p>Best performing products.</p>
+              </div>
+            </div>
+            <DataTable rows={products.slice(0, 5)} type="product" />
+            <button className="view-button" onClick={() => setModal("product")}>
+              View All Products <FaChevronRight />
+            </button>
+          </section>
+          <section className="da-panel insights">
+            <div className="panel-heading">
+              <div>
+                <h2>
+                  <FaLightbulb /> Key Insights
+                </h2>
+                <p>Notable observations from the selected data.</p>
+              </div>
+              <button className="insight-button">
+                <FaLightbulb /> Generate Insights
+              </button>
+            </div>
+            {[
+              "Revenue grew by 12.4% compared to the previous year, driven mainly by CALABARZON.",
+              "Shrink Wrap / Cap Seal is the top-performing category, contributing 32.1% of total revenue.",
+              "Laguna accounts for 29.6% of total revenue, making it the highest performing province.",
+              "Average order value increased by 3.4%, indicating stronger purchasing behavior.",
+              "Opportunities exist in underperforming provinces such as MIMAROPA and Caraga.",
+            ].map((x, i) => (
+              <div className="insight-row" key={x}>
+                <b>{i + 1}</b>
+                <span>{x}</span>
+              </div>
+            ))}
+          </section>
+        </div>
+        {modal && (
+          <div className="modal-backdrop" onClick={() => setModal(null)}>
+            <div className="da-modal" onClick={(e) => e.stopPropagation()}>
+              <button className="modal-close" onClick={() => setModal(null)}>
+                ×
+              </button>
+              <h2>
+                <FaChartBar />{" "}
+                {modal === "province"
+                  ? "All Provinces by Revenue"
+                  : "All Products by Revenue"}
+              </h2>
+              <p>Complete list with revenue and key metrics.</p>
+              <div className="modal-toolbar">
+                <label>
+                  <FaSearch />
+                  <input
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    placeholder="Search..."
+                  />
+                </label>
+                <SelectBox>Revenue (High to Low)</SelectBox>
+                <SelectBox>10</SelectBox>
+                <span>entries</span>
+              </div>
+              <DataTable rows={filtered} type={modal} />
+              <div className="pagination">
+                <span>
+                  Showing 1 to {Math.min(10, filtered.length)} entries
+                </span>
+                {["‹", "1", "2", "3", "4", "5", "…", "9", "›"].map((x, i) => (
+                  <button className={x === "1" ? "selected" : ""} key={i}>
+                    {x}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </>
+  );
 }
