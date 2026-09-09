@@ -1,0 +1,829 @@
+.data-management {
+    max-width: 1500px;
+    margin: 0 auto;
+    color: #12285c;
+}
+
+
+/* ==================================================
+   PAGE HEADER
+================================================== */
+
+.page-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+
+    margin-bottom: 24px;
+}
+
+.page-header h1 {
+    font-size: 30px;
+
+    margin-bottom: 6px;
+
+    color: #112a88;
+}
+
+.page-header p {
+    color: #7180a3;
+
+    font-size: 14px;
+}
+
+.header-note {
+    font-size: 12px;
+
+    font-style: italic;
+
+    color: #6177bc;
+
+    border-right: 4px solid #1d63f2;
+
+    padding-right: 12px;
+}
+
+
+/* ==================================================
+   TOP GRID
+================================================== */
+
+.management-grid {
+    display: grid;
+
+    grid-template-columns:
+        1.5fr 1fr;
+
+    gap: 18px;
+
+    margin-bottom: 20px;
+}
+
+.upload-card,
+.coverage-card,
+.files-card {
+
+    background: white;
+
+    border:
+        1px solid #e2e9f7;
+
+    border-radius: 12px;
+
+    box-shadow:
+        0 3px 14px
+        rgba(44, 75, 130, 0.06);
+}
+
+
+/* ==================================================
+   UPLOAD
+================================================== */
+
+.upload-card {
+    padding: 12px;
+}
+
+.upload-zone {
+
+    min-height: 245px;
+
+    border:
+        2px dashed #cbd8f1;
+
+    border-radius: 8px;
+
+    display: flex;
+
+    flex-direction: column;
+
+    align-items: center;
+
+    justify-content: center;
+
+    text-align: center;
+
+    cursor: pointer;
+
+    transition: 0.2s;
+
+    background: #fbfdff;
+}
+
+.upload-zone:hover,
+.upload-zone.dragging {
+
+    background: #f1f6ff;
+
+    border-color: #2873f0;
+}
+
+.upload-icon {
+
+    font-size: 44px;
+
+    color: #2873f0;
+
+    margin-bottom: 10px;
+}
+
+.upload-zone h2 {
+
+    font-size: 16px;
+
+    color: #172c78;
+
+    margin-bottom: 7px;
+}
+
+.upload-zone p {
+
+    font-size: 12px;
+
+    color: #7180a3;
+
+    margin-bottom: 12px;
+}
+
+.browse-button {
+
+    border: none;
+
+    background: #1769f5;
+
+    color: white;
+
+    border-radius: 6px;
+
+    padding: 10px 25px;
+
+    font-weight: 600;
+
+    cursor: pointer;
+}
+
+.upload-zone small {
+
+    color: #8a98b6;
+
+    font-size: 10px;
+
+    line-height: 1.6;
+
+    margin-top: 14px;
+}
+
+
+/* ==================================================
+   COVERAGE
+================================================== */
+
+.coverage-card {
+    padding: 18px;
+}
+
+.section-title {
+
+    display: flex;
+
+    gap: 10px;
+
+    align-items: center;
+
+    margin-bottom: 20px;
+}
+
+.section-title > svg {
+
+    color: #1769f5;
+
+    font-size: 20px;
+}
+
+.section-title div {
+
+    display: flex;
+
+    flex-direction: column;
+
+    gap: 4px;
+}
+
+.section-title strong {
+
+    font-size: 15px;
+}
+
+.section-title span {
+
+    font-size: 12px;
+
+    color: #647394;
+}
+
+.summary-grid {
+
+    display: grid;
+
+    grid-template-columns:
+        1fr 1fr;
+
+    gap: 12px;
+}
+
+.summary-card {
+
+    border:
+        1px solid #e3eaf6;
+
+    border-radius: 9px;
+
+    padding: 13px;
+
+    display: flex;
+
+    align-items: center;
+
+    gap: 10px;
+}
+
+.summary-icon {
+
+    width: 38px;
+    height: 38px;
+
+    border-radius: 50%;
+
+    background: #edf4ff;
+
+    color: #1769f5;
+
+    display: flex;
+
+    align-items: center;
+
+    justify-content: center;
+}
+
+.summary-card div:last-child {
+
+    display: flex;
+
+    flex-direction: column;
+
+    gap: 3px;
+}
+
+.summary-card strong {
+
+    font-size: 17px;
+}
+
+.summary-card span {
+
+    color: #73809d;
+
+    font-size: 10px;
+}
+
+
+/* ==================================================
+   IMPORTED FILES
+================================================== */
+
+.files-card {
+
+    overflow: hidden;
+}
+
+.files-header {
+
+    padding: 17px 20px;
+
+    display: flex;
+
+    justify-content: space-between;
+
+    align-items: center;
+
+    border-bottom:
+        1px solid #e7edf7;
+}
+
+.files-header h2 {
+
+    font-size: 17px;
+
+    margin-bottom: 4px;
+}
+
+.files-header p {
+
+    font-size: 11px;
+
+    color: #8290ab;
+}
+
+.file-controls {
+
+    display: flex;
+
+    gap: 8px;
+}
+
+.search-box {
+
+    width: 210px;
+
+    height: 36px;
+
+    border:
+        1px solid #dbe4f4;
+
+    border-radius: 6px;
+
+    display: flex;
+
+    align-items: center;
+
+    gap: 8px;
+
+    padding: 0 10px;
+}
+
+.search-box svg {
+
+    color: #7182a4;
+}
+
+.search-box input {
+
+    border: none;
+
+    outline: none;
+
+    width: 100%;
+
+    font-size: 11px;
+}
+
+.refresh-button {
+
+    width: 36px;
+    height: 36px;
+
+    border:
+        1px solid #dbe4f4;
+
+    background: white;
+
+    border-radius: 6px;
+
+    color: #1769f5;
+
+    cursor: pointer;
+}
+
+
+/* ==================================================
+   TABLE
+================================================== */
+
+.table-wrapper {
+
+    overflow-x: auto;
+}
+
+table {
+
+    width: 100%;
+
+    border-collapse: collapse;
+}
+
+thead {
+
+    background: #f4f7fc;
+}
+
+th {
+
+    font-size: 10px;
+
+    color: #61708f;
+
+    text-align: left;
+
+    padding: 11px 12px;
+
+    white-space: nowrap;
+}
+
+td {
+
+    padding: 11px 12px;
+
+    border-top:
+        1px solid #edf1f7;
+
+    font-size: 11px;
+
+    color: #465474;
+
+    white-space: nowrap;
+}
+
+.file-name {
+
+    display: flex;
+
+    align-items: center;
+
+    gap: 7px;
+
+    color: #1769f5;
+
+    font-weight: 600;
+}
+
+.file-name svg {
+
+    color: #1ca36b;
+}
+
+
+/* ==================================================
+   STATUS
+================================================== */
+
+.status {
+
+    display: inline-flex;
+
+    align-items: center;
+
+    gap: 5px;
+
+    padding: 4px 8px;
+
+    border-radius: 20px;
+
+    font-size: 9px;
+
+    font-weight: 600;
+}
+
+.status.ready {
+
+    background: #e5f8ee;
+
+    color: #168b58;
+}
+
+.status.error {
+
+    background: #ffe7e7;
+
+    color: #d53d3d;
+}
+
+.status.empty {
+
+    background: #fff5dc;
+
+    color: #a87100;
+}
+
+
+/* ==================================================
+   ACTIONS
+================================================== */
+
+.actions {
+
+    display: flex;
+
+    gap: 5px;
+}
+
+.actions button {
+
+    border: none;
+
+    background: none;
+
+    color: #1769f5;
+
+    cursor: pointer;
+
+    font-size: 12px;
+}
+
+.actions .delete-action {
+
+    color: #e74b4b;
+}
+
+
+/* ==================================================
+   EMPTY STATE
+================================================== */
+
+.empty-state {
+
+    padding: 45px;
+
+    display: flex;
+
+    flex-direction: column;
+
+    align-items: center;
+
+    gap: 8px;
+
+    color: #8290aa;
+}
+
+.empty-state svg {
+
+    font-size: 30px;
+
+    color: #c2cee4;
+}
+
+
+/* ==================================================
+   FOOTER
+================================================== */
+
+.files-footer {
+
+    padding: 12px 18px;
+
+    border-top:
+        1px solid #edf1f7;
+
+    font-size: 10px;
+
+    color: #7e8ca8;
+
+    display: flex;
+
+    align-items: center;
+
+    justify-content: space-between;
+}
+
+
+/* ==================================================
+   PAGINATION
+================================================== */
+
+.pagination {
+
+    display: flex;
+
+    align-items: center;
+
+    gap: 4px;
+}
+
+.pagination button {
+
+    min-width: 28px;
+
+    height: 28px;
+
+    padding: 0 7px;
+
+    border:
+        1px solid #dce5f3;
+
+    background: white;
+
+    border-radius: 5px;
+
+    color: #63718d;
+
+    font-size: 10px;
+
+    cursor: pointer;
+
+    transition: 0.15s;
+}
+
+.pagination button:hover:not(:disabled) {
+
+    border-color: #1769f5;
+
+    color: #1769f5;
+}
+
+.pagination button.active {
+
+    background: #1769f5;
+
+    border-color: #1769f5;
+
+    color: white;
+
+    font-weight: 600;
+}
+
+.pagination button:disabled {
+
+    opacity: 0.4;
+
+    cursor: not-allowed;
+}
+
+
+/* ==================================================
+   PROCEED
+================================================== */
+
+.proceed-container {
+
+    display: flex;
+
+    justify-content: flex-end;
+
+    margin-top: 18px;
+}
+
+.proceed-button {
+
+    border: none;
+
+    background: #1769f5;
+
+    color: white;
+
+    border-radius: 6px;
+
+    padding: 13px 22px;
+
+    font-weight: 600;
+
+    cursor: pointer;
+}
+
+.proceed-button span {
+
+    margin-left: 18px;
+}
+
+
+/* ==================================================
+   MODAL
+================================================== */
+
+.modal-overlay {
+
+    position: fixed;
+
+    inset: 0;
+
+    background:
+        rgba(13, 35, 74, 0.35);
+
+    display: flex;
+
+    justify-content: center;
+
+    align-items: center;
+
+    z-index: 1000;
+}
+
+.file-modal {
+
+    width: 480px;
+
+    max-width: 90%;
+
+    background: white;
+
+    border-radius: 12px;
+
+    box-shadow:
+        0 20px 60px
+        rgba(20, 45, 90, 0.25);
+}
+
+.modal-header {
+
+    padding: 18px 20px;
+
+    display: flex;
+
+    justify-content: space-between;
+
+    border-bottom:
+        1px solid #e7edf7;
+}
+
+.modal-header h2 {
+
+    font-size: 18px;
+}
+
+.modal-header button {
+
+    border: none;
+
+    background: none;
+
+    font-size: 24px;
+
+    cursor: pointer;
+
+    color: #70809e;
+}
+
+.modal-body {
+
+    padding: 20px;
+}
+
+.detail-row {
+
+    display: flex;
+
+    justify-content: space-between;
+
+    gap: 20px;
+
+    padding: 11px 0;
+
+    border-bottom:
+        1px solid #edf1f7;
+
+    font-size: 12px;
+}
+
+.detail-row span {
+
+    color: #75829d;
+}
+
+.detail-row strong {
+
+    text-align: right;
+
+    color: #182e78;
+}
+
+
+/* ==================================================
+   RESPONSIVE
+================================================== */
+
+@media (max-width: 1000px) {
+
+    .management-grid {
+
+        grid-template-columns: 1fr;
+
+    }
+
+}
+
+
+@media (max-width: 700px) {
+
+    .page-header {
+
+        flex-direction: column;
+
+        gap: 12px;
+
+    }
+
+    .files-header {
+
+        flex-direction: column;
+
+        align-items: stretch;
+
+        gap: 12px;
+
+    }
+
+    .search-box {
+
+        width: 100%;
+
+    }
+
+    .files-footer {
+
+        flex-direction: column;
+
+        align-items: flex-start;
+
+        gap: 12px;
+
+    }
+
+}

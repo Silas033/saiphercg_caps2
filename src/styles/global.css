@@ -1,0 +1,77 @@
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+html,
+body,
+#root {
+    width: 100%;
+    height: 100%;
+}
+
+body {
+    font-family:
+        Inter,
+        Arial,
+        Helvetica,
+        sans-serif;
+
+    background: #f4f8ff;
+    color: #172b5d;
+}
+
+button,
+input,
+select {
+    font-family: inherit;
+}
+
+.app-shell {
+    display: flex;
+
+    width: 100%;
+    height: 100vh;
+
+    overflow: hidden;
+}
+
+.dss-main {
+    flex: 1;
+
+    min-width: 0;
+
+    display: flex;
+    flex-direction: column;
+}
+
+.dss-content {
+    flex: 1;
+
+    min-height: 0;
+
+    overflow-y: auto;
+
+    padding: 22px;
+
+    background:
+        linear-gradient(
+            135deg,
+            #f3f8ff,
+            #edf5ff
+        );
+}
+
+.placeholder-page {
+    padding: 20px;
+}
+
+.placeholder-page h1 {
+    color: #112a88;
+    margin-bottom: 8px;
+}
+
+.placeholder-page p {
+    color: #7180a3;
+}
