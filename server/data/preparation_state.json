@@ -1,0 +1,41 @@
+{
+  "generatedAt": "2026-09-23T01:42:08.467Z",
+  "source": {
+    "filesImported": 3,
+    "transactionLines": 2940,
+    "uniqueOrders": 1878,
+    "uniqueProducts": 82,
+    "dateCoverage": {
+      "min": "2021-01-01",
+      "max": "2021-03-31"
+    }
+  },
+  "quality": {
+    "duplicateRows": 0,
+    "nonCompletedOrders": 5,
+    "returnRefundOrders": 15,
+    "invalidDateRecords": 0,
+    "invalidQuantityRecords": 0,
+    "invalidReturnQuantityRecords": 0,
+    "excessiveReturnQuantityRecords": 0,
+    "missingProductRecords": 0,
+    "missingRegionRecords": 0,
+    "missingProvinceRecords": 0,
+    "uniqueStatuses": [
+      "Completed",
+      "Order Received"
+    ],
+    "missingFiles": [],
+    "invalidFiles": []
+  },
+  "validation": {
+    "geographicMappingPrepared": true,
+    "productClassificationPrepared": true,
+    "duplicateHandlingPrepared": true,
+    "timeFieldsGenerated": true,
+    "analyticalMeasuresPrepared": true
+  },
+  "readyForAnalysis": false,
+  "runId": "1790127728467-prep",
+  "prepared": true
+}

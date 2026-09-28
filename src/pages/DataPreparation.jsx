@@ -251,11 +251,17 @@ export default function DataPreparation({ setActivePage }) {
         setError("");
 
         try {
-            await getJson("/preparation/run", { method: "POST" });
+            const result = await getJson("/preparation/run", { method: "POST" });
             setDuplicateReviewed(false);
             setStatusReviewed(false);
             setReturnsReviewed(false);
             await loadPreparationData();
+
+            if (result?.supabaseSync?.success === false) {
+                setError(`Data prepared locally, but Supabase sync failed: ${result.supabaseSync.error}`);
+            } else if (result?.supabaseSync?.warning) {
+                setError(result.supabaseSync.warning);
+            }
         } catch (err) {
             setError(err.message);
         } finally {

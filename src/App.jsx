@@ -26,7 +26,7 @@ export default function App() {
                 return <DataPreparation setActivePage={setActivePage} />;
 
             case "analysis-controls":
-                return <AnalysisControls />;
+                return <AnalysisControls setActivePage={setActivePage} />;
 
             case "descriptive-analytics":
                 return <DescriptiveAnalytics />;
