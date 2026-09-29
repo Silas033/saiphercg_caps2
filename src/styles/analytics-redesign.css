@@ -203,3 +203,19 @@
         margin-left:0;
     }
 }
+
+/* ---------- Analysis Controls <-> Descriptive wiring additions ---------- */
+
+.rd-applied-note {
+    margin-top: 10px;
+    font-size: 10px;
+    color: #7b899d;
+    text-align: center;
+}
+
+.rd-empty-note {
+    padding: 16px 4px;
+    color: #8a96a8;
+    font-size: 11px;
+    text-align: center;
+}

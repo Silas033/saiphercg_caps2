@@ -1,449 +1,126 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
-    FaMoneyBillWave,
-    FaShoppingCart,
-    FaCubes,
-    FaChartLine,
-    FaBoxOpen,
-    FaLightbulb,
-    FaArrowUp,
-    FaArrowDown,
-    FaChevronDown,
-    FaChevronUp,
-    FaMapMarkerAlt
+  FaMoneyBillWave, FaShoppingCart, FaCubes, FaChartLine, FaBoxOpen,
+  FaLightbulb, FaArrowUp, FaArrowDown, FaMapMarkerAlt, FaUndo,
+  FaSyncAlt, FaExclamationTriangle, FaChevronDown, FaChevronRight, FaTimes
 } from "react-icons/fa";
+import "../styles/analytics-functional.css";
+import { DEFAULT_SCOPE } from "../data/analyticsScope";
+import { fetchDescriptive } from "../data/analyticsApi";
 
-import "../styles/analytics-redesign.css";
-
-const months = [
-    "Dec 24", "Jan 25", "Feb 25", "Mar 25", "Apr 25", "May 25",
-    "Jun 25", "Jul 25", "Aug 25", "Sep 25", "Oct 25", "Nov 25"
-];
-
-const trendData = {
-    Revenue: [8.7, 9.1, 9.4, 9.8, 10.1, 10.5, 10.3, 11.1, 11.4, 11.9, 12.2, 12.8],
-    Orders: [712, 748, 781, 805, 832, 861, 846, 902, 935, 961, 989, 1016],
-    Quantity: [2310, 2445, 2581, 2704, 2810, 2944, 2892, 3105, 3220, 3341, 3460, 3575]
+const money = value => `₱${Number(value || 0).toLocaleString("en-PH", { maximumFractionDigits: 0 })}`;
+const shortMoney = value => {
+  const n = Number(value || 0);
+  if (Math.abs(n) >= 1e6) return `₱${(n / 1e6).toFixed(2)}M`;
+  if (Math.abs(n) >= 1e3) return `₱${(n / 1e3).toFixed(1)}K`;
+  return money(n);
 };
+const pct = value => value == null ? "—" : `${(value * 100).toFixed(1)}%`;
+const clone = scope => ({
+  period: scope?.period || "All Available Data",
+  customStart: scope?.customStart || null,
+  customEnd: scope?.customEnd || null,
+  returns: scope?.returns || "Include All",
+  region: scope?.region || "All Regions",
+  province: scope?.province || "All Provinces",
+  categories: scope?.categories == null ? null : [...scope.categories]
+});
 
-const regionData = [
-    {
-        name: "South Luzon",
-        share: 61.7,
-        provinces: [
-            { name: "Laguna", revenue: 13.96, orders: 4610, quantity: 17480 },
-            { name: "Cavite", revenue: 12.84, orders: 4320, quantity: 16040 },
-            { name: "Batangas", revenue: 10.95, orders: 3710, quantity: 13880 },
-            { name: "Rizal", revenue: 8.31, orders: 2920, quantity: 10520 },
-            { name: "Quezon", revenue: 5.42, orders: 2015, quantity: 7420 }
-        ]
-    },
-    {
-        name: "Visayas",
-        share: 17.4,
-        provinces: [
-            { name: "Cebu", revenue: 14.82, orders: 4850, quantity: 18320 },
-            { name: "Iloilo", revenue: 8.92, orders: 3190, quantity: 11740 },
-            { name: "Negros Occidental", revenue: 5.18, orders: 1960, quantity: 7210 },
-            { name: "Leyte", revenue: 3.71, orders: 1420, quantity: 5140 },
-            { name: "Bohol", revenue: 3.28, orders: 1280, quantity: 4680 }
-        ]
-    },
-    {
-        name: "North Luzon",
-        share: 11.8,
-        provinces: [
-            { name: "Pampanga", revenue: 9.86, orders: 3420, quantity: 12510 },
-            { name: "Bulacan", revenue: 7.41, orders: 2715, quantity: 10020 },
-            { name: "Pangasinan", revenue: 4.92, orders: 1840, quantity: 6920 },
-            { name: "Nueva Ecija", revenue: 3.66, orders: 1395, quantity: 5170 },
-            { name: "Tarlac", revenue: 3.12, orders: 1180, quantity: 4310 }
-        ]
-    },
-    {
-        name: "Mindanao",
-        share: 7.4,
-        provinces: [
-            { name: "Davao del Sur", revenue: 8.58, orders: 3010, quantity: 10890 },
-            { name: "Misamis Oriental", revenue: 4.14, orders: 1580, quantity: 5770 },
-            { name: "Cagayan de Oro", revenue: 3.62, orders: 1385, quantity: 5050 },
-            { name: "Davao del Norte", revenue: 3.21, orders: 1250, quantity: 4510 },
-            { name: "Bukidnon", revenue: 2.64, orders: 1020, quantity: 3650 }
-        ]
-    },
-    {
-        name: "Metro Manila",
-        share: 1.7,
-        provinces: [
-            { name: "Manila", revenue: 3.32, orders: 1290, quantity: 4620 },
-            { name: "Quezon City", revenue: 2.96, orders: 1155, quantity: 4140 },
-            { name: "Pasig", revenue: 2.21, orders: 865, quantity: 3120 },
-            { name: "Makati", revenue: 1.94, orders: 742, quantity: 2690 },
-            { name: "Taguig", revenue: 1.72, orders: 665, quantity: 2430 }
-        ]
+export default function DescriptiveAnalytics({ scope = DEFAULT_SCOPE }) {
+  const applied = useMemo(() => clone(scope), [scope]);
+  const [data, setData] = useState(null);
+  const [viewData, setViewData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [drillLoading, setDrillLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [metric, setMetric] = useState("revenue");
+  const [geoTab, setGeoTab] = useState("regions");
+  const [selectedRegion, setSelectedRegion] = useState(null);
+  const [selectedProvince, setSelectedProvince] = useState(null);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setLoading(true); setError(""); setSelectedRegion(null); setSelectedProvince(null);
+    fetchDescriptive(applied, controller.signal)
+      .then(result => { setData(result); setViewData(result); })
+      .catch(err => err.name !== "AbortError" && (setData(null), setError(err.message)))
+      .finally(() => setLoading(false));
+    return () => controller.abort();
+  }, [applied]);
+
+  const openGeo = async (region, province = "All Provinces") => {
+    setSelectedRegion(region || null);
+    setSelectedProvince(province !== "All Provinces" ? province : null);
+    setDrillLoading(true);
+    try {
+      setViewData(await fetchDescriptive({ ...applied, region: region || "All Regions", province }));
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setDrillLoading(false);
     }
-];
+  };
 
-const allProvinces = regionData.flatMap(region =>
-    region.provinces.map(province => ({
-        ...province,
-        region: region.name
-    }))
-);
+  const clearGeo = () => {
+    setSelectedRegion(null); setSelectedProvince(null); setViewData(data);
+  };
 
-const baseCategories = [
-    { name: "Shrink Wrap / Cap Seal", revenue: 11.3, quantity: 36200, share: 24.5 },
-    { name: "Plastic Bags", revenue: 9.8, quantity: 41800, share: 22.1 },
-    { name: "Bottle / Container", revenue: 7.7, quantity: 22300, share: 16.8 },
-    { name: "Tape / Adhesive", revenue: 6.4, quantity: 19600, share: 13.7 },
-    { name: "Label / Sticker", revenue: 4.7, quantity: 14100, share: 10.2 }
-];
+  if (loading) return <div className="df-page"><div className="df-loading-panel"><FaSyncAlt className="af-spin" /><strong>Loading Descriptive Analytics…</strong><span>Calculating historical performance from the prepared Master Data.</span></div></div>;
+  if (!data) return <div className="df-page"><div className="df-error-panel"><FaExclamationTriangle /><h2>Descriptive Analytics is not available</h2><p>{error || "Run Data Preparation first."}</p></div></div>;
 
-/* Frontend prototype scope data. This can be replaced later by API results. */
-const categoryAdjustments = {
-    Laguna: [1.06, 1.02, 0.96, 1.01, 0.98],
-    Cavite: [0.98, 1.08, 1.02, 0.99, 1.03],
-    Batangas: [1.01, 0.97, 1.07, 1.05, 0.96],
-    Rizal: [0.95, 1.04, 1.08, 1.01, 1.06],
-    Quezon: [0.91, 1.06, 1.00, 1.09, 0.94],
-    Cebu: [1.03, 1.04, 1.06, 0.96, 1.01],
-    Iloilo: [0.97, 1.06, 1.04, 0.98, 1.02],
-    "Negros Occidental": [0.94, 1.01, 1.07, 1.03, 1.00],
-    Leyte: [0.91, 1.02, 1.03, 1.05, 0.96],
-    Bohol: [0.95, 1.05, 0.99, 1.01, 1.03],
-    Pampanga: [1.05, 1.02, 0.99, 1.04, 1.01],
-    Bulacan: [1.03, 1.06, 1.01, 1.00, 1.02],
-    Pangasinan: [0.96, 1.01, 1.04, 1.05, 0.98],
-    "Nueva Ecija": [0.94, 1.03, 1.02, 1.00, 1.05],
-    Tarlac: [0.93, 1.04, 1.01, 1.03, 1.00],
-    "Davao del Sur": [1.02, 1.05, 1.03, 0.97, 1.01],
-    "Misamis Oriental": [0.96, 1.02, 1.05, 1.01, 0.98],
-    "Cagayan de Oro": [1.00, 1.04, 1.06, 0.99, 1.02],
-    "Davao del Norte": [0.95, 1.05, 1.00, 1.02, 1.03],
-    Bukidnon: [0.93, 1.03, 1.02, 1.05, 0.97],
-    Manila: [0.98, 1.02, 1.08, 1.04, 1.06],
-    "Quezon City": [1.01, 1.03, 1.06, 1.02, 1.04],
-    Pasig: [0.99, 1.04, 1.03, 1.02, 1.05],
-    Makati: [1.04, 1.01, 1.08, 1.03, 1.06],
-    Taguig: [1.02, 1.03, 1.05, 1.01, 1.04]
-};
+  const active = viewData || data;
+  const trend = data.trend || [];
+  const values = trend.map(item => Number(item[metric] || 0));
+  const max = Math.max(1, ...values);
+  const latest = trend.at(-1)?.[metric] || 0;
+  const previous = trend.at(-2)?.[metric] || 0;
+  const mom = previous > 0 ? latest / previous - 1 : null;
+  const regions = data.regionRows || [];
+  const provinces = data.provinceRows || [];
+  const categories = active.categoryRows || [];
 
-export default function DescriptiveAnalytics() {
-    const [metric, setMetric] = useState("Revenue");
-    const [geoTab, setGeoTab] = useState("Top Provinces");
-    const [selectedRegion, setSelectedRegion] = useState("South Luzon");
-    const [selectedProvince, setSelectedProvince] = useState("Laguna");
+  const regionProvinceMap = new Map();
+  provinces.forEach(item => {
+    if (!regionProvinceMap.has(item.region)) regionProvinceMap.set(item.region, []);
+    regionProvinceMap.get(item.region).push(item);
+  });
 
-    const values = trendData[metric];
-    const max = Math.max(...values);
+  return (
+    <div className="df-page">
+      <header className="df-header"><div><span className="df-eyebrow">DESCRIPTIVE ANALYTICS</span><h1>Descriptive Analytics</h1><p>Understand what sold, where demand was concentrated, and how historical performance changed within the applied scope.</p></div><div className="df-header-scope"><small>Applied scope</small><strong>{data.period.label}</strong><span>{data.scope.region} → {data.scope.province}</span></div></header>
 
-    const latest = values[values.length - 1];
-    const previous = values[values.length - 2];
-    const change = ((latest - previous) / previous) * 100;
+      {error && <div className="df-alert"><FaExclamationTriangle /><span>{error}</span><button type="button" onClick={() => setError("")}><FaTimes /></button></div>}
 
-    const formattedLatest = useMemo(() => {
-        if (metric === "Revenue") return `₱${latest.toFixed(1)}M`;
-        return latest.toLocaleString();
-    }, [latest, metric]);
+      <div className="df-scope-bar"><div><small>Period</small><strong>{data.period.label}</strong></div><div><small>Returns</small><strong>{data.scope.returns}</strong></div><div><small>Geography</small><strong>{data.scope.region} → {data.scope.province}</strong></div><div><small>Categories</small><strong>{data.scope.categories == null ? "All categories" : `${data.scope.categories.length} selected`}</strong></div><span className="df-source">Source: prepared Master Data</span></div>
 
-    const activeRegion = regionData.find(item => item.name === selectedRegion) || regionData[0];
-    const activeProvince = allProvinces.find(item => item.name === selectedProvince && item.region === selectedRegion)
-        || activeRegion.provinces[0];
+      <section className="df-kpis">
+        <KpiCard icon={<FaMoneyBillWave />} label="Total Revenue" value={money(data.totals.revenue)} change={data.changeVsPrevious?.revenue} tone="blue" />
+        <KpiCard icon={<FaShoppingCart />} label="Total Orders" value={data.totals.orders.toLocaleString()} change={data.changeVsPrevious?.orders} tone="purple" />
+        <KpiCard icon={<FaCubes />} label="Quantity Sold" value={data.totals.quantity.toLocaleString()} change={data.changeVsPrevious?.quantity} tone="green" />
+        <KpiCard icon={<FaChartLine />} label="Average Order Value" value={money(data.totals.aov)} detail="Revenue ÷ distinct orders" tone="amber" />
+      </section>
 
-    const scopedCategories = useMemo(() => {
-        const multipliers = categoryAdjustments[selectedProvince] || [1, 1, 1, 1, 1];
-        return baseCategories.map((item, index) => ({
-            ...item,
-            revenue: item.revenue * multipliers[index],
-            quantity: Math.round(item.quantity * multipliers[index]),
-            share: item.share * multipliers[index]
-        }));
-    }, [selectedProvince]);
+      <div className="df-grid-two">
+        <section className="df-card"><div className="df-card-head between"><div><h2>Historical Trend</h2><p>{data.period.months.length} month{data.period.months.length === 1 ? "" : "s"} in the applied period.</p></div><div className="df-segmented">{[["revenue", "Revenue"], ["orders", "Orders"], ["quantity", "Quantity"]].map(([key, label]) => <button type="button" key={key} className={metric === key ? "active" : ""} onClick={() => setMetric(key)}>{label}</button>)}</div></div>
+          <div className="df-chart"><div className="df-chart-y"><span>{metric === "revenue" ? shortMoney(max) : max.toLocaleString()}</span><span>0</span></div><div className="df-chart-main"><div className="df-gridline" style={{ top: "8%" }} /><div className="df-gridline" style={{ top: "35%" }} /><div className="df-gridline" style={{ top: "62%" }} /><div className="df-gridline" style={{ top: "89%" }} /><svg viewBox="0 0 720 260" preserveAspectRatio="none"><polyline className="df-line" points={values.map((v, i) => `${values.length <= 1 ? 360 : 12 + i * (696 / (values.length - 1))},${224 - (v / max) * 190}`).join(" ")} />{values.map((v, i) => <circle key={i} cx={values.length <= 1 ? 360 : 12 + i * (696 / (values.length - 1))} cy={224 - (v / max) * 190} r="4" className="df-point" />)}</svg><div className="df-chart-labels">{trend.filter((_, i) => trend.length <= 8 || i === 0 || i === trend.length - 1 || i % Math.ceil(trend.length / 6) === 0).map(item => <span key={item.month}>{item.label}</span>)}</div></div></div>
+          <div className="df-trend-summary"><div><small>Latest month</small><strong>{metric === "revenue" ? shortMoney(latest) : latest.toLocaleString()}</strong></div><div className={mom == null || mom >= 0 ? "positive" : "negative"}>{mom == null ? "No prior month" : <>{mom >= 0 ? <FaArrowUp /> : <FaArrowDown />}{Math.abs(mom * 100).toFixed(1)}% vs previous month</>}</div></div>
+        </section>
 
-    const selectRegion = regionName => {
-        const region = regionData.find(item => item.name === regionName);
-        if (!region) return;
-        setSelectedRegion(regionName);
-        setSelectedProvince(region.provinces[0]?.name || "");
-    };
+        <section className="df-card"><div className="df-card-head"><div className="df-card-icon purple"><FaMapMarkerAlt /></div><div><h2>Geographic Performance</h2><p>Click a region to reveal its top 5 provinces.</p></div></div><div className="df-tabs"><button type="button" className={geoTab === "regions" ? "active" : ""} onClick={() => setGeoTab("regions")}>Regions</button><button type="button" className={geoTab === "provinces" ? "active" : ""} onClick={() => setGeoTab("provinces")}>Top Provinces</button></div>
+          {geoTab === "regions" ? <div className="df-region-list">{regions.map((region, index) => {
+            const expanded = selectedRegion === region.name && !selectedProvince;
+            const list = (regionProvinceMap.get(region.name) || []).slice(0, 5);
+            return <div key={region.name} className="df-region-block"><button type="button" className={`df-region-row ${expanded ? "selected" : ""}`} onClick={() => openGeo(expanded ? null : region.name)}><span className="df-chevron">{expanded ? <FaChevronDown /> : <FaChevronRight />}</span><span className="df-rank">{index + 1}</span><div className="df-rank-main"><strong>{region.name}</strong><small>{region.orders.toLocaleString()} orders · {region.quantity.toLocaleString()} units</small></div><div className="df-rank-stat"><strong>{shortMoney(region.revenue)}</strong><small>{pct(region.share)} of scope</small></div><div className="df-progress"><span style={{ width: `${Math.min(100, region.share * 100)}%` }} /></div></button>
+              {expanded && <div className="df-breakout"><div className="df-breakout-head"><div><strong>Top 5 provinces in {region.name}</strong><small>Click a province to view its category performance.</small></div></div>{list.map((province, i) => <button type="button" key={province.name} className={`df-breakout-row ${selectedProvince === province.name ? "selected" : ""}`} onClick={() => openGeo(region.name, province.name)}><span>{i + 1}</span><strong>{province.name}</strong><small>{shortMoney(province.revenue)} · {region.revenue > 0 ? pct(province.revenue / region.revenue) : "—"} of region</small></button>)}</div>}</div>;
+          })}</div> : <div className="df-region-list">{provinces.slice(0, 5).map((province, index) => <button type="button" key={province.name} className={`df-region-row ${selectedProvince === province.name ? "selected" : ""}`} onClick={() => openGeo(province.region, province.name)}><span className="df-chevron"><FaMapMarkerAlt /></span><span className="df-rank">{index + 1}</span><div className="df-rank-main"><strong>{province.name}</strong><small>{province.region} · {province.orders.toLocaleString()} orders</small></div><div className="df-rank-stat"><strong>{shortMoney(province.revenue)}</strong><small>{pct(province.share)} of scope</small></div><div className="df-progress"><span style={{ width: `${Math.min(100, province.share * 100)}%` }} /></div></button>)}</div>}
+        </section>
+      </div>
 
-    const selectProvince = (provinceName, regionName) => {
-        setSelectedRegion(regionName);
-        setSelectedProvince(provinceName);
-    };
+      <section className="df-card"><div className="df-card-head between"><div><div className="df-card-icon green"><FaBoxOpen /></div><div className="df-title-block"><h2>Category Performance</h2><p>Category results update for the selected geographic view.</p></div></div><div className="df-scope-context"><small>Current geographic view</small><strong>{active.scope.region} → {active.scope.province}</strong>{(selectedRegion || selectedProvince) && <button type="button" onClick={clearGeo}>Clear drill-down</button>}</div></div>{drillLoading && <div className="df-drill-loading"><FaSyncAlt className="af-spin" /> Updating category performance…</div>}<div className="df-table-wrap"><table className="df-table"><thead><tr><th>Category</th><th>Revenue</th><th>Quantity</th><th>Share of selected scope</th><th>Active lines</th></tr></thead><tbody>{categories.map(item => <tr key={item.name}><td><strong>{item.name}</strong></td><td>{shortMoney(item.revenue)}</td><td>{item.quantity.toLocaleString()}</td><td><span className="df-tag">{pct(item.share)}</span></td><td>{item.lineCount.toLocaleString()}</td></tr>)}{!categories.length && <tr><td colSpan="5" className="df-empty">No categories match the applied scope.</td></tr>}</tbody></table></div></section>
 
-    return (
-        <div className="rd-page">
-            <div className="rd-header">
-                <div>
-                    <span className="rd-eyebrow">DESCRIPTIVE ANALYTICS</span>
-                    <h1>Descriptive Analytics</h1>
-                    <p>Understand historical demand, revenue, order activity, and geographic concentration.</p>
-                </div>
-                <div className="rd-header-note">
-                    <span>Active period</span>
-                    <strong>Jan 2021 – Nov 2025</strong>
-                    <small>Current scope: all available data</small>
-                </div>
-            </div>
-
-            <div className="rd-kpi-grid four">
-                <Kpi icon={<FaMoneyBillWave />} label="Total Revenue" value="₱352.5M" detail="Across prepared transaction lines" tone="blue" />
-                <Kpi icon={<FaShoppingCart />} label="Distinct Orders" value="40,014" detail="Order ID counted once" tone="purple" />
-                <Kpi icon={<FaCubes />} label="Quantity Sold" value="1.25M" detail="Net quantity available for analysis" tone="green" />
-                <Kpi icon={<FaChartLine />} label="Latest Month" value="Nov 2025" detail={`${formattedLatest} ${metric.toLowerCase()} in selected view`} tone="amber" />
-            </div>
-
-            <div className="rd-grid-two">
-                <section className="rd-card">
-                    <div className="rd-card-head between">
-                        <div>
-                            <h2>Historical Trend</h2>
-                            <p>Use one metric at a time to keep the trend readable.</p>
-                        </div>
-                        <div className="rd-segmented">
-                            {Object.keys(trendData).map(item => (
-                                <button key={item} className={metric === item ? "active" : ""} onClick={() => setMetric(item)}>{item}</button>
-                            ))}
-                        </div>
-                    </div>
-
-                    <div className="rd-trend-chart">
-                        <div className="rd-y-labels">
-                            <span>{metric === "Revenue" ? `₱${max.toFixed(0)}M` : Math.round(max).toLocaleString()}</span>
-                            <span>{metric === "Revenue" ? "₱0M" : "0"}</span>
-                        </div>
-                        <div className="rd-chart-area">
-                            <div className="rd-gridline g1" />
-                            <div className="rd-gridline g2" />
-                            <div className="rd-gridline g3" />
-                            <svg viewBox="0 0 600 240" preserveAspectRatio="none" className="rd-chart-svg">
-                                <polyline
-                                    fill="none"
-                                    stroke="currentColor"
-                                    strokeWidth="4"
-                                    strokeLinejoin="round"
-                                    strokeLinecap="round"
-                                    points={values.map((value, index) => {
-                                        const x = 10 + index * (580 / (values.length - 1));
-                                        const y = 220 - ((value / max) * 190);
-                                        return `${x},${y}`;
-                                    }).join(" ")}
-                                />
-                                {values.map((value, index) => {
-                                    const x = 10 + index * (580 / (values.length - 1));
-                                    const y = 220 - ((value / max) * 190);
-                                    return <circle key={index} cx={x} cy={y} r="4.5" fill="white" stroke="currentColor" strokeWidth="3" />;
-                                })}
-                            </svg>
-                            <div className="rd-x-labels">
-                                {months.map(item => <span key={item}>{item}</span>)}
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className="rd-trend-foot">
-                        <div>
-                            <span>Latest</span>
-                            <strong>{formattedLatest}</strong>
-                        </div>
-                        <div className={change >= 0 ? "positive" : "negative"}>
-                            {change >= 0 ? <FaArrowUp /> : <FaArrowDown />}
-                            {Math.abs(change).toFixed(1)}% vs previous month
-                        </div>
-                    </div>
-                </section>
-
-                <section className="rd-card">
-                    <div className="rd-card-head between">
-                        <div>
-                            <h2>Geographic Performance</h2>
-                            <p>Concentration by the analytical Region → Province hierarchy.</p>
-                        </div>
-                        <div className="rd-segmented">
-                            {['Top Provinces', 'Regions'].map(item => (
-                                <button
-                                    key={item}
-                                    className={geoTab === item ? "active" : ""}
-                                    onClick={() => setGeoTab(item)}
-                                >
-                                    {item}
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-
-                    {geoTab === "Top Provinces" ? (
-                        <div className="rd-ranking-list">
-                            {allProvinces
-                                .sort((a, b) => b.revenue - a.revenue)
-                                .slice(0, 5)
-                                .map((item, index) => (
-                                    <button
-                                        type="button"
-                                        className={`rd-rank-row rd-rank-button ${selectedProvince === item.name ? "selected-row" : ""}`}
-                                        key={item.name}
-                                        onClick={() => selectProvince(item.name, item.region)}
-                                    >
-                                        <span className="rank-number">{index + 1}</span>
-                                        <div className="rank-main">
-                                            <strong>{item.name}</strong>
-                                            <small>{item.region}</small>
-                                        </div>
-                                        <div className="rank-stat">
-                                            <strong>₱{item.revenue.toFixed(2)}M</strong>
-                                            <small>{item.orders.toLocaleString()} orders</small>
-                                        </div>
-                                    </button>
-                                ))}
-                        </div>
-                    ) : (
-                        <div className="rd-region-list">
-                            {regionData.map((region, index) => {
-                                const isOpen = selectedRegion === region.name;
-                                return (
-                                    <div className="rd-region-block" key={region.name}>
-                                        <button
-                                            type="button"
-                                            className={`rd-rank-row rd-rank-button ${isOpen ? "selected-row" : ""}`}
-                                            onClick={() => selectRegion(region.name)}
-                                        >
-                                            <span className="rank-number">{index + 1}</span>
-                                            <div className="rank-main">
-                                                <strong>{region.name}</strong>
-                                                <small>{region.share.toFixed(1)}% of displayed revenue</small>
-                                            </div>
-                                            <div className="rd-region-row-end">
-                                                <div className="rd-progress">
-                                                    <span style={{ width: `${region.share}%` }} />
-                                                </div>
-                                                <span className="rd-expand-icon">{isOpen ? <FaChevronUp /> : <FaChevronDown />}</span>
-                                            </div>
-                                        </button>
-
-                                        {isOpen && (
-                                            <div className="rd-region-breakout">
-                                                <div className="rd-breakout-head">
-                                                    <div>
-                                                        <strong>Top 5 Provinces in {region.name}</strong>
-                                                        <small>Click a province to use it as the active descriptive scope.</small>
-                                                    </div>
-                                                    <span className="rd-tag">Province breakdown</span>
-                                                </div>
-                                                {region.provinces.slice(0, 5).map((province, provinceIndex) => (
-                                                    <button
-                                                        type="button"
-                                                        key={province.name}
-                                                        className={`rd-breakout-row ${selectedProvince === province.name ? "selected-row" : ""}`}
-                                                        onClick={() => selectProvince(province.name, region.name)}
-                                                    >
-                                                        <span className="rank-number small">{provinceIndex + 1}</span>
-                                                        <div className="rank-main">
-                                                            <strong>{province.name}</strong>
-                                                            <small>{province.orders.toLocaleString()} orders · {province.quantity.toLocaleString()} units</small>
-                                                        </div>
-                                                        <div className="rank-stat">
-                                                            <strong>₱{province.revenue.toFixed(2)}M</strong>
-                                                            <small>Revenue</small>
-                                                        </div>
-                                                    </button>
-                                                ))}
-                                            </div>
-                                        )}
-                                    </div>
-                                );
-                            })}
-                        </div>
-                    )}
-                </section>
-            </div>
-
-            <section className="rd-card">
-                <div className="rd-card-head between">
-                    <div className="rd-card-title-with-icon">
-                        <div className="rd-icon green"><FaBoxOpen /></div>
-                        <div>
-                            <h2>Category Performance</h2>
-                            <p>Controlled categories make long product listings easier to interpret.</p>
-                        </div>
-                    </div>
-
-                    <div className="rd-scope-summary">
-                        <span className="rd-scope-label"><FaMapMarkerAlt /> Current geographic scope</span>
-                        <strong>{activeRegion.name} <span>→</span> {activeProvince.name}</strong>
-                    </div>
-                </div>
-
-                <div className="rd-scope-bar">
-                    <div>
-                        <span>Region</span>
-                        <strong>{selectedRegion}</strong>
-                    </div>
-                    <span className="rd-scope-arrow">→</span>
-                    <div>
-                        <span>Province</span>
-                        <strong>{selectedProvince}</strong>
-                    </div>
-                    <span className="rd-scope-note">Category results below are shown within this selected scope.</span>
-                </div>
-
-                <div className="rd-table-wrap">
-                    <table className="rd-table">
-                        <thead>
-                            <tr>
-                                <th>Category</th>
-                                <th>Revenue</th>
-                                <th>Quantity</th>
-                                <th>Share</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {scopedCategories.map(item => (
-                                <tr key={item.name}>
-                                    <td><strong>{item.name}</strong></td>
-                                    <td>₱{item.revenue.toFixed(1)}M</td>
-                                    <td>{item.quantity.toLocaleString()}</td>
-                                    <td><span className="rd-tag">{item.share.toFixed(1)}%</span></td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
-            </section>
-
-            <div className="rd-grid-two">
-                <section className="rd-card">
-                    <div className="rd-card-head">
-                        <div className="rd-icon amber"><FaLightbulb /></div>
-                        <div>
-                            <h2>Computed Insights</h2>
-                            <p>Rule-based observations from the current descriptive view.</p>
-                        </div>
-                    </div>
-                    <div className="rd-insights">
-                        <Insight title="Latest month increased" text="The selected metric is higher than the previous month in the current display." />
-                        <Insight title="Demand is geographically concentrated" text={`${activeRegion.name} contributes ${activeRegion.share.toFixed(1)}% of displayed revenue. The selected province is ${activeProvince.name}.`} />
-                        <Insight title="Category results follow the selected scope" text={`The category table is currently showing performance within ${selectedRegion} → ${selectedProvince}.`} />
-                        <Insight title="Use category drill-down for sparse products" text="Long product titles and thin product-province combinations are better examined after category-level analysis." />
-                    </div>
-                </section>
-
-                <section className="rd-card rd-info-card">
-                    <FaMapMarkerAlt />
-                    <div>
-                        <strong>How the geographic drill-down works</strong>
-                        <p>Use the Regions tab to open a region and reveal its top five provinces. Selecting a province updates the active scope shown in Category Performance.</p>
-                    </div>
-                </section>
-            </div>
-        </div>
-    );
+      <div className="df-grid-two"><section className="df-card"><div className="df-card-head"><div className="df-card-icon amber"><FaLightbulb /></div><div><h2>Computed Insights</h2><p>Deterministic observations from the applied scope.</p></div></div><div className="df-insights">{data.insights.map(item => <div className="df-insight" key={`${item.type}-${item.title}`}><span><FaLightbulb /></span><div><strong>{item.title}</strong><p>{item.text}</p></div></div>)}</div></section><section className="df-card df-method-card"><div className="df-card-head"><div className="df-card-icon blue"><FaUndo /></div><div><h2>Data Treatment</h2><p>How this view interprets the current scope.</p></div></div><div className="df-method-list"><div><small>Returns</small><strong>{data.scope.returns}</strong></div><div><small>Eligible lines</small><strong>{data.totals.lineCount.toLocaleString()}</strong></div><div><small>Return/refund lines</small><strong>{data.returns.returnedLines.toLocaleString()}</strong></div><div><small>Return/refund orders</small><strong>{data.returns.returnedOrders.toLocaleString()}</strong></div></div><p className="df-method-note">Orders are distinct Order IDs. Revenue uses prepared transaction-line revenue. Quantity uses prepared net quantity.</p></section></div>
+    </div>
+  );
 }
 
-function Kpi({ icon, label, value, detail, tone }) {
-    return <div className={`rd-kpi tone-${tone}`}><div className="rd-kpi-icon">{icon}</div><div><small>{label}</small><strong>{value}</strong><span>{detail}</span></div></div>;
-}
-
-function Insight({ title, text }) {
-    return <div className="rd-insight"><span><FaLightbulb /></span><div><strong>{title}</strong><p>{text}</p></div></div>;
-}
+function KpiCard({ icon, label, value, change, detail, tone }) { return <div className={`df-kpi-card ${tone}`}><span className="df-kpi-icon">{icon}</span><div><small>{label}</small><strong>{value}</strong>{change != null ? <span className={change >= 0 ? "positive" : "negative"}>{change >= 0 ? <FaArrowUp /> : <FaArrowDown />} {Math.abs(change * 100).toFixed(1)}% vs previous period</span> : <span>{detail}</span>}</div></div>; }

@@ -10,10 +10,27 @@ import DescriptiveAnalytics from "./pages/DescriptiveAnalytics";
 import PredictiveAnalytics from "./pages/PredictiveAnalytics";
 import PrescriptiveAnalytics from "./pages/PrescriptiveAnalytics";
 
+import { DEFAULT_SCOPE } from "./data/analyticsScope";
+
 export default function App() {
 
     const [activePage, setActivePage] =
         useState("data-management");
+
+    /*
+      Shared analysis scope. Analysis Controls edits a local draft and
+      only commits into this state when "Apply Scope" is clicked, so the
+      rest of the app (Descriptive Analytics, for now) always renders the
+      last APPLIED scope rather than whatever is mid-edit on the Controls
+      page.
+    */
+    const [appliedScope, setAppliedScope] =
+        useState(DEFAULT_SCOPE);
+
+    function applyScope(nextScope) {
+        setAppliedScope(nextScope);
+        setActivePage("descriptive-analytics");
+    }
 
     function renderPage() {
 
@@ -26,10 +43,15 @@ export default function App() {
                 return <DataPreparation setActivePage={setActivePage} />;
 
             case "analysis-controls":
-                return <AnalysisControls setActivePage={setActivePage} />;
+                return (
+                    <AnalysisControls
+                        appliedScope={appliedScope}
+                        onApply={applyScope}
+                    />
+                );
 
             case "descriptive-analytics":
-                return <DescriptiveAnalytics />;
+                return <DescriptiveAnalytics scope={appliedScope} />;
 
             case "predictive-analytics":
                 return <PredictiveAnalytics />;
