@@ -1,4 +1,4 @@
-
+import { useEffect, useMemo, useState } from "react";
 import {
   FaCalendarAlt, FaUndo, FaMapMarkerAlt, FaLayerGroup, FaBoxOpen,
   FaCheckCircle, FaInfoCircle, FaArrowRight, FaSyncAlt, FaExclamationTriangle
@@ -23,6 +23,27 @@ const monthLabel = value => {
   return new Date(Date.UTC(y, m - 1, 1)).toLocaleString("en-US", { month: "short", year: "numeric", timeZone: "UTC" });
 };
 
+/* Fill anything the scope leaves open (null categories = all, empty custom
+   months) using the real options, and drop categories that no longer exist. */
+const withDefaults = (scope, options) => {
+  const next = clone(scope);
+  next.customStart ||= options.months[0] || null;
+  next.customEnd ||= options.months.at(-1) || null;
+  next.categories = (next.categories ?? [...options.categories])
+    .filter(item => options.categories.includes(item));
+  return next;
+};
+
+const labelFor = (scope, months) => {
+  if (scope.period === "Custom Range") {
+    return `${monthLabel(scope.customStart)} – ${monthLabel(scope.customEnd)}`;
+  }
+  const list = scope.period === "Last 12 Months" ? months?.slice(-12)
+    : scope.period === "Last 24 Months" ? months?.slice(-24)
+    : months;
+  return `${monthLabel(list?.[0])} – ${monthLabel(list?.at(-1))}`;
+};
+
 export default function AnalysisControls({ appliedScope, onApply }) {
   const [options, setOptions] = useState(null);
   const [draft, setDraft] = useState(() => clone(appliedScope));
@@ -30,24 +51,21 @@ export default function AnalysisControls({ appliedScope, onApply }) {
   const [loading, setLoading] = useState(true);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [error, setError] = useState("");
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     const controller = new AbortController();
+    setLoading(true);
+    setError("");
     fetchAnalyticsOptions(controller.signal)
       .then(result => {
         setOptions(result);
-        setDraft(current => {
-          const next = clone(current);
-          next.customStart ||= result.months[0] || null;
-          next.customEnd ||= result.months.at(-1) || null;
-          next.categories ??= [...result.categories];
-          return next;
-        });
+        setDraft(current => withDefaults(current, result));
       })
-      .catch(err => err.name !== "AbortError" && setError(err.message))
-      .finally(() => setLoading(false));
+      .catch(err => { if (err.name !== "AbortError") setError(err.message); })
+      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
-  }, []);
+  }, [reloadKey]);
 
   useEffect(() => {
     if (!options) return;
@@ -70,19 +88,39 @@ export default function AnalysisControls({ appliedScope, onApply }) {
       : options.provinces.filter(item => item.region === draft.region);
   }, [options, draft.region]);
 
-  const periodLabel = draft.period === "Custom Range"
-    ? `${monthLabel(draft.customStart)} – ${monthLabel(draft.customEnd)}`
-    : draft.period === "Last 12 Months"
-      ? `${monthLabel(options?.months?.slice(-12)[0])} – ${monthLabel(options?.months?.at(-1))}`
-      : draft.period === "Last 24 Months"
-        ? `${monthLabel(options?.months?.slice(-24)[0])} – ${monthLabel(options?.months?.at(-1))}`
-        : `${monthLabel(options?.months?.[0])} – ${monthLabel(options?.months?.at(-1))}`;
+  const periodLabel = labelFor(draft, options?.months);
+  const appliedLabel = labelFor(appliedScope, options?.months);
 
   const validRange = draft.period !== "Custom Range" || Boolean(
     draft.customStart && draft.customEnd && draft.customStart <= draft.customEnd
   );
 
-  const isDirty = JSON.stringify(clone(draft)) !== JSON.stringify(clone(appliedScope));
+  const signature = scope => {
+    const full = withDefaults(scope, options);
+    const custom = full.period === "Custom Range";
+    return JSON.stringify({
+      period: full.period,
+      returns: full.returns,
+      region: full.region,
+      province: full.province,
+      customStart: custom ? full.customStart : null,
+      customEnd: custom ? full.customEnd : null,
+      categories: [...full.categories].sort()
+    });
+  };
+
+  const isDirty = options ? signature(draft) !== signature(appliedScope) : false;
+
+  /* All categories selected is stored as null ("all"), and custom months are
+     only kept for Custom Range, so the applied scope stays clean. */
+  const buildApplied = () => {
+    const next = clone(draft);
+    if (next.period !== "Custom Range") { next.customStart = null; next.customEnd = null; }
+    if (next.categories && options.categories.every(item => next.categories.includes(item))) {
+      next.categories = null;
+    }
+    return next;
+  };
 
   const setField = (field, value) => setDraft(current => ({ ...current, [field]: value }));
 
@@ -114,13 +152,21 @@ export default function AnalysisControls({ appliedScope, onApply }) {
     </div></div>
   );
 
+  if (!options) return (
+    <div className="af-page"><div className="af-loading-panel">
+      <FaExclamationTriangle /><strong>Analysis controls are not available</strong>
+      <span>{error || "The prepared Master Data could not be loaded."}</span>
+      <button type="button" className="af-reset" onClick={() => setReloadKey(k => k + 1)}>Try again</button>
+    </div></div>
+  );
+
   return (
     <div className="af-page">
       <header className="af-header">
         <div><span className="af-eyebrow">ANALYSIS SCOPE</span><h1>Analysis Controls</h1>
           <p>Set the scope used by Descriptive Analytics. Changes stay in draft until you apply them.</p></div>
         <div className="af-applied-card"><small>Currently applied</small>
-          <strong>{clone(appliedScope).period === "Custom Range" ? `${monthLabel(appliedScope.customStart)} – ${monthLabel(appliedScope.customEnd)}` : periodLabel}</strong>
+          <strong>{appliedLabel}</strong>
           <span>{appliedScope.region || "All Regions"} → {appliedScope.province || "All Provinces"}</span></div>
       </header>
 
@@ -176,8 +222,8 @@ export default function AnalysisControls({ appliedScope, onApply }) {
             <SectionHeader icon={<FaLayerGroup />} tone="navy" title="Scope Summary" text="What Descriptive Analytics will use after Apply Scope." />
             <div className="af-summary-list"><SummaryRow label="Period" value={periodLabel} /><SummaryRow label="Returns" value={draft.returns} /><SummaryRow label="Region" value={draft.region} /><SummaryRow label="Province" value={draft.province} /><SummaryRow label="Categories" value={`${selectedCategories.length} selected`} /></div>
             <div className="af-preview-box"><div className="af-preview-head"><span>Live preview</span>{previewLoading && <FaSyncAlt className="af-spin" />}</div>{preview ? <><strong>{preview.totals.lineCount.toLocaleString()}</strong><small>eligible transaction lines</small><div className="af-preview-stats"><span>₱{preview.totals.revenue.toLocaleString("en-PH", { maximumFractionDigits: 0 })}</span><span>{preview.totals.orders.toLocaleString()} orders</span></div></> : <small>Preview unavailable until prepared data is ready.</small>}</div>
-            <button type="button" className="af-apply" disabled={!validRange || !selectedCategories.length} onClick={() => onApply(clone(draft))}>Apply Scope <FaArrowRight /></button>
-            {isDirty ? <button type="button" className="af-reset" onClick={() => setDraft(clone(appliedScope))}>Reset to applied scope</button> : <div className="af-applied-status"><FaCheckCircle /> Matches current scope</div>}
+            <button type="button" className="af-apply" disabled={!validRange || !selectedCategories.length} onClick={() => onApply(buildApplied())}>Apply Scope <FaArrowRight /></button>
+            {isDirty ? <button type="button" className="af-reset" onClick={() => setDraft(withDefaults(appliedScope, options))}>Reset to applied scope</button> : <div className="af-applied-status"><FaCheckCircle /> Matches current scope</div>}
           </section>
 
           <section className="af-card"><h3 className="af-side-title">Scope rules</h3><div className="af-principles"><div><span>01</span><p>Orders = distinct Order IDs.</p></div><div><span>02</span><p>Revenue = prepared transaction-line revenue.</p></div><div><span>03</span><p>Quantity = prepared net quantity.</p></div><div><span>04</span><p>Applied scope drives the descriptive results.</p></div></div></section>

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   FaMoneyBillWave, FaShoppingCart, FaCubes, FaChartLine, FaBoxOpen,
   FaLightbulb, FaArrowUp, FaArrowDown, FaMapMarkerAlt, FaUndo,
@@ -38,31 +38,40 @@ export default function DescriptiveAnalytics({ scope = DEFAULT_SCOPE }) {
   const [selectedRegion, setSelectedRegion] = useState(null);
   const [selectedProvince, setSelectedProvince] = useState(null);
 
+  const drillToken = useRef(0);
+
   useEffect(() => {
     const controller = new AbortController();
-    setLoading(true); setError(""); setSelectedRegion(null); setSelectedProvince(null);
+    drillToken.current += 1;
+    setLoading(true); setError(""); setSelectedRegion(null); setSelectedProvince(null); setDrillLoading(false);
     fetchDescriptive(applied, controller.signal)
       .then(result => { setData(result); setViewData(result); })
-      .catch(err => err.name !== "AbortError" && (setData(null), setError(err.message)))
-      .finally(() => setLoading(false));
+      .catch(err => { if (err.name !== "AbortError") { setData(null); setError(err.message); } })
+      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
   }, [applied]);
 
   const openGeo = async (region, province = "All Provinces") => {
+    const token = ++drillToken.current;
     setSelectedRegion(region || null);
     setSelectedProvince(province !== "All Provinces" ? province : null);
     setDrillLoading(true);
     try {
-      setViewData(await fetchDescriptive({ ...applied, region: region || "All Regions", province }));
+      const result = await fetchDescriptive({ ...applied, region: region || "All Regions", province });
+      if (token === drillToken.current) setViewData(result);
     } catch (err) {
-      setError(err.message);
+      if (token === drillToken.current) {
+        setError(err.message);
+        setSelectedRegion(null); setSelectedProvince(null); setViewData(data);
+      }
     } finally {
-      setDrillLoading(false);
+      if (token === drillToken.current) setDrillLoading(false);
     }
   };
 
   const clearGeo = () => {
-    setSelectedRegion(null); setSelectedProvince(null); setViewData(data);
+    drillToken.current += 1;
+    setSelectedRegion(null); setSelectedProvince(null); setViewData(data); setDrillLoading(false);
   };
 
   if (loading) return <div className="df-page"><div className="df-loading-panel"><FaSyncAlt className="af-spin" /><strong>Loading Descriptive Analytics…</strong><span>Calculating historical performance from the prepared Master Data.</span></div></div>;
@@ -108,9 +117,10 @@ export default function DescriptiveAnalytics({ scope = DEFAULT_SCOPE }) {
 
         <section className="df-card"><div className="df-card-head"><div className="df-card-icon purple"><FaMapMarkerAlt /></div><div><h2>Geographic Performance</h2><p>Click a region to reveal its top 5 provinces.</p></div></div><div className="df-tabs"><button type="button" className={geoTab === "regions" ? "active" : ""} onClick={() => setGeoTab("regions")}>Regions</button><button type="button" className={geoTab === "provinces" ? "active" : ""} onClick={() => setGeoTab("provinces")}>Top Provinces</button></div>
           {geoTab === "regions" ? <div className="df-region-list">{regions.map((region, index) => {
-            const expanded = selectedRegion === region.name && !selectedProvince;
+            const expanded = selectedRegion === region.name;
+            const regionSelected = expanded && !selectedProvince;
             const list = (regionProvinceMap.get(region.name) || []).slice(0, 5);
-            return <div key={region.name} className="df-region-block"><button type="button" className={`df-region-row ${expanded ? "selected" : ""}`} onClick={() => openGeo(expanded ? null : region.name)}><span className="df-chevron">{expanded ? <FaChevronDown /> : <FaChevronRight />}</span><span className="df-rank">{index + 1}</span><div className="df-rank-main"><strong>{region.name}</strong><small>{region.orders.toLocaleString()} orders · {region.quantity.toLocaleString()} units</small></div><div className="df-rank-stat"><strong>{shortMoney(region.revenue)}</strong><small>{pct(region.share)} of scope</small></div><div className="df-progress"><span style={{ width: `${Math.min(100, region.share * 100)}%` }} /></div></button>
+            return <div key={region.name} className="df-region-block"><button type="button" className={`df-region-row ${regionSelected ? "selected" : ""}`} onClick={() => (regionSelected ? clearGeo() : openGeo(region.name))}><span className="df-chevron">{expanded ? <FaChevronDown /> : <FaChevronRight />}</span><span className="df-rank">{index + 1}</span><div className="df-rank-main"><strong>{region.name}</strong><small>{region.orders.toLocaleString()} orders · {region.quantity.toLocaleString()} units</small></div><div className="df-rank-stat"><strong>{shortMoney(region.revenue)}</strong><small>{pct(region.share)} of scope</small></div><div className="df-progress"><span style={{ width: `${Math.min(100, region.share * 100)}%` }} /></div></button>
               {expanded && <div className="df-breakout"><div className="df-breakout-head"><div><strong>Top 5 provinces in {region.name}</strong><small>Click a province to view its category performance.</small></div></div>{list.map((province, i) => <button type="button" key={province.name} className={`df-breakout-row ${selectedProvince === province.name ? "selected" : ""}`} onClick={() => openGeo(region.name, province.name)}><span>{i + 1}</span><strong>{province.name}</strong><small>{shortMoney(province.revenue)} · {region.revenue > 0 ? pct(province.revenue / region.revenue) : "—"} of region</small></button>)}</div>}</div>;
           })}</div> : <div className="df-region-list">{provinces.slice(0, 5).map((province, index) => <button type="button" key={province.name} className={`df-region-row ${selectedProvince === province.name ? "selected" : ""}`} onClick={() => openGeo(province.region, province.name)}><span className="df-chevron"><FaMapMarkerAlt /></span><span className="df-rank">{index + 1}</span><div className="df-rank-main"><strong>{province.name}</strong><small>{province.region} · {province.orders.toLocaleString()} orders</small></div><div className="df-rank-stat"><strong>{shortMoney(province.revenue)}</strong><small>{pct(province.share)} of scope</small></div><div className="df-progress"><span style={{ width: `${Math.min(100, province.share * 100)}%` }} /></div></button>)}</div>}
         </section>

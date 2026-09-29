@@ -1661,7 +1661,7 @@ app.get(
                 error
             );
 
-            res.status(500).json({
+            res.status(error.status || 500).json({
                 success:
                     false,
 
@@ -1687,7 +1687,7 @@ app.post(
                 error
             );
 
-            res.status(500).json({
+            res.status(error.status || 500).json({
                 success:
                     false,
 
