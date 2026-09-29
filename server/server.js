@@ -9,6 +9,8 @@ import path from "path";
 import crypto from "crypto";
 import { fileURLToPath } from "url";
 import { createClient } from "@supabase/supabase-js";
+import { createAnalyticsCache, analyzeRows } from "./analytics.js";
+import { forecastRows } from "./forecasting.js";
 
 import {
     createPreparationService
@@ -51,7 +53,7 @@ const app =
     express();
 
 const PORT =
-    4000;
+    Number(process.env.PORT) || 4000;
 
 
 /* ======================================================
@@ -146,6 +148,8 @@ if (
    MIDDLEWARE
 ====================================================== */
 
+const analyticsCache = createAnalyticsCache(supabase);
+
 app.use(
     cors()
 );
@@ -162,6 +166,39 @@ app.use(
 /* ======================================================
    DATABASE HELPERS
 ====================================================== */
+
+app.get("/api/forecasts", async (req, res) => {
+    let filters;
+    const horizon = Number(req.query.horizon || 12);
+    const target = req.query.target || 'quantity';
+    try {
+        filters = req.query.filters ? JSON.parse(req.query.filters) : {};
+        if (!filters || typeof filters !== 'object' || Array.isArray(filters) || ![6, 12].includes(horizon) || !['quantity', 'orders', 'revenue'].includes(target)) throw new Error();
+        analyzeRows([], filters);
+    } catch { return res.status(400).json({ error: 'Invalid forecast settings or analysis scope.' }); }
+    try {
+        const snapshot = await analyticsCache.get();
+        res.set('Cache-Control', 'no-store');
+        res.json({ ...forecastRows(snapshot.rows, filters, horizon, target), source: 'supabase', loadedAt: snapshot.loadedAt });
+    } catch (error) { res.status(503).json({ error: error.message }); }
+});
+
+app.get("/api/analytics", async (req, res) => {
+    let filters;
+    try {
+        filters = req.query.filters ? JSON.parse(req.query.filters) : {};
+        if (!filters || typeof filters !== "object" || Array.isArray(filters)) throw new Error();
+    } catch {
+        return res.status(400).json({ error: "Invalid analysis scope." });
+    }
+    try {
+        const snapshot = await analyticsCache.get();
+        res.set("Cache-Control", "no-store");
+        res.json({ ...analyzeRows(snapshot.rows, filters), loadedAt: snapshot.loadedAt, source: "supabase" });
+    } catch (error) {
+        res.status(503).json({ error: error.message });
+    }
+});
 
 function readDatabase() {
 
@@ -1794,6 +1831,10 @@ async function syncDimensionTables() {
 ====================================================== */
 
 async function syncPreparedMasterData() {
+    return analyticsCache.sync(uploadPreparedMasterData);
+}
+
+async function uploadPreparedMasterData() {
 
     if (!supabase) {
 
@@ -2215,6 +2256,10 @@ async function syncPreparedMasterData() {
     }
 
 
+    if (count !== prepared.length) {
+        throw new Error(`Supabase verification expected ${prepared.length} rows but found ${count}.`);
+    }
+
     return {
 
         success: true,
@@ -2518,6 +2563,9 @@ app.use(
 /* ======================================================
    START SERVER
 ====================================================== */
+
+// Warm the same cache used by scope options and descriptive aggregates.
+await analyticsCache.get().catch(error => console.error("Analytics startup:", error.message));
 
 app.listen(
     PORT,

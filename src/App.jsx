@@ -9,8 +9,10 @@ import AnalysisControls from "./pages/AnalysisControls";
 import DescriptiveAnalytics from "./pages/DescriptiveAnalytics";
 import PredictiveAnalytics from "./pages/PredictiveAnalytics";
 import PrescriptiveAnalytics from "./pages/PrescriptiveAnalytics";
+import { DEFAULT_SCOPE } from "./hooks/useAnalytics";
 
 export default function App() {
+    const [analysisScope, setAnalysisScope] = useState(DEFAULT_SCOPE);
 
     const [activePage, setActivePage] =
         useState("data-management");
@@ -26,13 +28,13 @@ export default function App() {
                 return <DataPreparation setActivePage={setActivePage} />;
 
             case "analysis-controls":
-                return <AnalysisControls setActivePage={setActivePage} />;
+                return <AnalysisControls setActivePage={setActivePage} scope={analysisScope} onApply={setAnalysisScope} />;
 
             case "descriptive-analytics":
-                return <DescriptiveAnalytics />;
+                return <DescriptiveAnalytics scope={analysisScope} />;
 
             case "predictive-analytics":
-                return <PredictiveAnalytics />;
+                return <PredictiveAnalytics scope={analysisScope} />;
 
             case "prescriptive-analytics":
                 return <PrescriptiveAnalytics />;

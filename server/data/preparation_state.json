@@ -1,19 +1,19 @@
 {
-  "generatedAt": "2026-09-23T01:42:08.467Z",
+  "generatedAt": "2026-09-29T11:01:09.112Z",
   "source": {
-    "filesImported": 3,
-    "transactionLines": 2940,
-    "uniqueOrders": 1878,
-    "uniqueProducts": 82,
+    "filesImported": 59,
+    "transactionLines": 60464,
+    "uniqueOrders": 40014,
+    "uniqueProducts": 641,
     "dateCoverage": {
       "min": "2021-01-01",
-      "max": "2021-03-31"
+      "max": "2025-11-16"
     }
   },
   "quality": {
-    "duplicateRows": 0,
-    "nonCompletedOrders": 5,
-    "returnRefundOrders": 15,
+    "duplicateRows": 7,
+    "nonCompletedOrders": 81,
+    "returnRefundOrders": 251,
     "invalidDateRecords": 0,
     "invalidQuantityRecords": 0,
     "invalidReturnQuantityRecords": 0,
@@ -36,6 +36,6 @@
     "analyticalMeasuresPrepared": true
   },
   "readyForAnalysis": false,
-  "runId": "1790127728467-prep",
+  "runId": "1790679669112-prep",
   "prepared": true
 }

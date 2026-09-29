@@ -1,212 +1,119 @@
-import { useMemo, useState } from "react";
-import {
-    FaChartLine,
-    FaCalendarAlt,
-    FaCheckCircle,
-    FaInfoCircle,
-    FaMapMarkerAlt,
-    FaBoxOpen,
-    FaExclamationCircle
-} from "react-icons/fa";
+import { useEffect, useState } from 'react';
+import { DEFAULT_SCOPE, monthLabel } from '../hooks/useAnalytics';
+import '../styles/analytics-redesign.css';
 
-import "../styles/analytics-redesign.css";
+const format = value => value == null ? 'N/A' : new Intl.NumberFormat('en-PH', { maximumFractionDigits: 2 }).format(value);
 
-const forecastMonths = [
-    "Dec 25", "Jan 26", "Feb 26", "Mar 26", "Apr 26", "May 26",
-    "Jun 26", "Jul 26", "Aug 26", "Sep 26", "Oct 26", "Nov 26"
-];
-
-const history = [
-    42, 44, 46, 47, 50, 51, 50, 54, 56, 58, 60, 63,
-    61, 64, 68, 70, 73, 72, 76, 78, 81, 84, 86, 89
-];
-
-const forecast = [64, 67, 69, 72, 74, 77, 80, 82, 85, 88, 91, 94];
-const low = [58, 60, 61, 63, 64, 66, 68, 69, 71, 73, 75, 77];
-const high = [70, 74, 77, 81, 84, 88, 92, 95, 99, 103, 107, 111];
-
-const provinceForecasts = [
-    ["Cebu", 142800, 151900, 6.4],
-    ["Laguna", 134500, 142700, 6.1],
-    ["Cavite", 126400, 133700, 5.8],
-    ["Batangas", 114900, 121100, 5.4],
-    ["Pampanga", 102500, 107800, 5.2]
-];
-
-const categoryForecasts = [
-    ["Plastic Bags", 278400, 294900, 5.9],
-    ["Shrink Wrap / Cap Seal", 248200, 265800, 7.1],
-    ["Bottle / Container", 183700, 194900, 6.1],
-    ["Tape / Adhesive", 151900, 160200, 5.5],
-    ["Label / Sticker", 112400, 118300, 5.2]
-];
-
-export default function PredictiveAnalytics() {
-    const [tab, setTab] = useState("results");
+export default function PredictiveAnalytics({ scope = DEFAULT_SCOPE }) {
     const [horizon, setHorizon] = useState(12);
-    const [level, setLevel] = useState("Total Demand");
-    const [model, setModel] = useState("Seasonal ARIMA");
-
-    const horizonMonths = horizon === 6 ? forecastMonths.slice(0, 6) : forecastMonths;
-    const visibleForecast = horizon === 6 ? forecast.slice(0, 6) : forecast;
-    const latest = history[history.length - 1];
-    const projectedEnd = visibleForecast[visibleForecast.length - 1];
-    const projectedGrowth = ((projectedEnd - latest) / latest) * 100;
-
-    const chart = useMemo(() => {
-        const all = [...history, ...visibleForecast];
-        const max = Math.max(...all);
-        const min = Math.min(...all);
-        const range = max - min || 1;
-        const points = all.map((value, index) => {
-            const x = 8 + index * (584 / (all.length - 1));
-            const y = 215 - ((value - min) / range) * 180;
-            return { x, y, value };
-        });
-        return { points, split: history.length - 1, max, min };
-    }, [visibleForecast]);
-
-    return (
-        <div className="rd-page">
-            <div className="rd-header">
-                <div>
-                    <span className="rd-eyebrow">PREDICTIVE ANALYTICS</span>
-                    <h1>Predictive Analytics</h1>
-                    <p>Project future demand from the available historical series and report forecast uncertainty honestly.</p>
-                </div>
-                <div className="rd-header-note">
-                    <span>Forecast starts after</span>
-                    <strong>Nov 2025</strong>
-                    <small>Dynamic horizon — not a fixed 2026–2027 window</small>
-                </div>
+    const [target, setTarget] = useState('quantity');
+    const [revision, setRevision] = useState(0);
+    const [state, setState] = useState({ loading: true });
+    const key = JSON.stringify({ scope, horizon, target, revision });
+    useEffect(() => {
+        const controller = new AbortController();
+        setState({ loading: true, key });
+        async function load() {
+            try {
+                const params = new URLSearchParams({ filters: JSON.stringify(scope), horizon, target });
+                const response = await fetch(`/api/forecasts?${params}`, { signal: controller.signal });
+                if (response.status === 404) throw new Error('The running backend has not loaded the forecast endpoint. Restart it with npm run server, then click Regenerate forecast.');
+                if (!response.headers.get('content-type')?.includes('application/json')) throw new Error('Forecast API unavailable. Restart the backend and check the API connection.');
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.error || 'Unable to generate forecast.');
+                setState({ key, data });
+            } catch (error) {
+                if (error.name !== 'AbortError') setState({ key, error: error.message });
+            }
+        }
+        load();
+        return () => controller.abort();
+    }, [key]);
+    const { data, error } = state.key === key ? state : {};
+    const loading = state.key !== key || state.loading;
+    return <div className="rd-page forecast-page">
+        <div className="rd-header"><div><span className="rd-eyebrow">PREDICTIVE ANALYTICS</span><h1>Demand Forecast</h1><p>See estimated monthly sales, orders, or revenue based on your past records.</p></div></div>
+        <section className="rd-card" style={{ marginBottom: 18 }}>
+            <div className="rd-card-head"><div><h2>Forecast setup</h2><p>Change geography, categories, dates, and return treatment in Analysis Controls, then apply the scope.</p></div></div>
+            <div className="rd-field-grid two">
+                <label className="rd-field"><span>What to forecast</span><select value={target} onChange={e => setTarget(e.target.value)}><option value="quantity">Net units sold</option><option value="orders">Distinct orders</option><option value="revenue">Revenue (PHP)</option></select></label>
+                <label className="rd-field"><span>How far ahead</span><select value={horizon} onChange={e => setHorizon(Number(e.target.value))}><option value={6}>Next 6 months</option><option value={12}>Next 12 months</option></select></label>
             </div>
-
-            <div className="rd-tabbar">
-                <button className={tab === "setup" ? "active" : ""} onClick={() => setTab("setup")}><FaCalendarAlt /> Forecast Setup</button>
-                <button className={tab === "results" ? "active" : ""} onClick={() => setTab("results")}><FaChartLine /> Forecast Results</button>
+            <p className="rd-note">{scope.region} · {scope.province} · {scope.categories === null ? 'All categories' : scope.categories?.join(', ') || 'No categories selected'} · {scope.period}{scope.period === 'Custom Range' ? ` (${scope.start} to ${scope.end})` : ''} · {scope.returns}</p>
+            <button className="rd-primary-button" disabled={loading} onClick={() => setRevision(n => n + 1)}>{loading ? 'Calculating...' : 'Regenerate forecast'}</button>
+        </section>
+        {loading && <p role="status">Loading historical data and calculating forecasts...</p>}
+        {error && <section className="rd-card" role="alert"><h2>Forecast unavailable</h2><p>{error}</p></section>}
+        {data && <>
+            <div className="rd-kpi-grid four">
+                <Kpi label="Forecast unit" value={data.unit} detail="Monthly total for your selected filters" />
+                <Kpi label="Historical coverage" value={`${data.coverage.observedMonths} months of data`} detail={`${monthLabel(data.coverage.start)} to ${monthLabel(data.coverage.end)}`} />
+                <Kpi label="Latest dataset record" value={data.coverage.latestAvailableDate || 'No data'} detail={`Source: Supabase · loaded ${new Date(data.loadedAt).toLocaleString()}`} />
+                <Kpi label="History check" value={data.status === 'ready' ? 'Forecast available' : 'Insufficient history'} detail={`${data.coverage.missingMonths.length} months without records`} />
             </div>
-
-            {tab === "setup" ? (
-                <Setup
-                    horizon={horizon}
-                    setHorizon={setHorizon}
-                    level={level}
-                    setLevel={setLevel}
-                    model={model}
-                    setModel={setModel}
-                    onGenerate={() => setTab("results")}
-                />
-            ) : (
-                <>
-                    <div className="rd-kpi-grid four">
-                        <Kpi label="Forecast Period" value={`Next ${horizon} months`} sub={`Starts Dec 2025`} />
-                        <Kpi label="Backtest MAPE" value="8.7%" sub="Prototype validation result" />
-                        <Kpi label="Projected End Value" value={projectedEnd.toFixed(0)} sub={`${level.toLowerCase()} index`} />
-                        <Kpi label="Projected Change" value={`+${projectedGrowth.toFixed(1)}%`} sub="Latest actual → horizon end" />
-                    </div>
-
+            <section className="rd-card forecast-notes" style={{ marginBottom: 18 }} aria-live="polite">
+                <h2>What to know before using this forecast</h2>
+                {data.status === 'ready' ? <ul className="forecast-note-list">
+                    <li><strong>Estimates, not guarantees.</strong> Actual results may fall outside the lower and upper estimates.</li>
+                    <li><strong>Check your uploads.</strong> Make sure the first and last months contain all their records. A partial month can make demand look lower than it is.</li>
+                    {data.model === 'Historical mean' && <li><strong>Limited seasonal history.</strong> This forecast uses the average of past months. It does not account for seasonal changes.{horizon === 12 ? ' The 12-month forecast was tested against only 6 months of past results.' : ''}</li>}
+                    {data.validation.mae >= data.validation.baselineMae && <li><strong>Use extra caution.</strong> In the historical test, this method was no more accurate than repeating the last known monthly total.</li>}
+                </ul> : <ul className="forecast-note-list">{data.messages.map(message => <li key={message}>{message}</li>)}</ul>}
+                {data.coverage.missingMonths.length > 0 && <p>Months to check: {data.coverage.missingMonths.map(monthLabel).join(', ')}</p>}
+            </section>
+            {data.status === 'ready' && <>
+                <div className="rd-kpi-grid four">
+                    <Kpi label="Forecast period" value={`${horizon} months`} detail={`${monthLabel(data.forecast[0].month)} to ${monthLabel(data.forecast.at(-1).month)}`} />
+                    <Kpi label="Final month estimate" value={format(data.forecast.at(-1).value)} detail={data.unit} />
+                    <Kpi label="Projected change" value={data.projectedChange == null ? 'N/A' : `${data.projectedChange > 0 ? '+' : ''}${format(data.projectedChange)}%`} detail="Latest historical month to final forecast month" />
+                    <Kpi label="Average test error" value={format(data.validation.mae)} detail={`${data.unit} per month; lower is better`} />
+                </div>
+                <section className="rd-card" style={{ marginBottom: 18 }}><h2>Historical vs forecast</h2><p>{data.model} · {data.unit} · approximate 95% prediction interval</p><ForecastChart data={data} /></section>
+                <div className="rd-grid-two">
                     <section className="rd-card">
-                        <div className="rd-card-head between">
-                            <div>
-                                <h2>Historical vs Forecast</h2>
-                                <p>Historical observations are separated from projected values. Shading represents an illustrative confidence band.</p>
-                            </div>
-                            <div className="rd-inline-badges"><span className="rd-tag">{model}</span><span className="rd-tag muted">Prototype values</span></div>
-                        </div>
-
-                        <div className="rd-forecast-chart">
-                            <svg viewBox="0 0 600 260" preserveAspectRatio="none">
-                                <line x1="8" y1="220" x2="592" y2="220" className="axis" />
-                                <line x1="8" y1="35" x2="592" y2="35" className="grid" />
-                                <line x1="8" y1="97" x2="592" y2="97" className="grid" />
-                                <line x1="8" y1="158" x2="592" y2="158" className="grid" />
-                                <polygon
-                                    className="forecast-band"
-                                    points={visibleForecast.map((_, i) => {
-                                        const x = 8 + (history.length - 1 + i) * (584 / (history.length + visibleForecast.length - 1));
-                                        const y = 215 - ((high[i] - chart.min) / (chart.max - chart.min || 1)) * 180;
-                                        return `${x},${y}`;
-                                    }).concat(
-                                        visibleForecast.map((_, i) => {
-                                            const idx = visibleForecast.length - 1 - i;
-                                            const x = 8 + (history.length - 1 + idx) * (584 / (history.length + visibleForecast.length - 1));
-                                            const y = 215 - ((low[idx] - chart.min) / (chart.max - chart.min || 1)) * 180;
-                                            return `${x},${y}`;
-                                        })
-                                    ).join(" ")}
-                                />
-                                <polyline
-                                    className="historical-line"
-                                    points={history.map((value, i) => `${chart.points[i].x},${chart.points[i].y}`).join(" ")}
-                                />
-                                <polyline
-                                    className="forecast-line"
-                                    points={visibleForecast.map((value, i) => `${chart.points[history.length - 1 + i].x},${chart.points[history.length - 1 + i].y}`).join(" ")}
-                                />
-                                <line
-                                    x1={chart.points[history.length - 1].x}
-                                    y1="35"
-                                    x2={chart.points[history.length - 1].x}
-                                    y2="220"
-                                    className="split-line"
-                                />
-                                <text x={chart.points[history.length - 1].x + 8} y="50" className="split-label">LAST ACTUAL</text>
-                            </svg>
-                            <div className="rd-forecast-legend"><span><i className="history-dot" /> Historical</span><span><i className="forecast-dot" /> Forecast</span><span><i className="band-dot" /> Confidence band</span></div>
-                        </div>
+                        <h2>Monthly forecast</h2>
+                        <p>Estimated {data.target === 'revenue' ? 'revenue in PHP' : data.unit} for each future month.</p>
+                        <p className="forecast-help">Lower and upper estimates show the approximate 95% prediction range. Actual results can fall outside it.</p>
+                        <div className="rd-table-wrap"><table className="rd-table"><thead><tr><th>Month</th><th>Estimate</th><th>Lower estimate</th><th>Upper estimate</th></tr></thead><tbody>{data.forecast.map(row => <tr key={row.month}><td>{monthLabel(row.month)}</td><td>{format(row.value)}</td><td>{format(row.lower)}</td><td>{format(row.upper)}</td></tr>)}</tbody></table></div>
+                        {data.target !== 'revenue' && <p className="forecast-help">Estimates may include decimals because they represent expected averages.</p>}
                     </section>
-
-                    <div className="rd-grid-two">
-                        <ForecastTable title="Top Provinces by Forecasted Demand" icon={<FaMapMarkerAlt />} rows={provinceForecasts} />
-                        <ForecastTable title="Top Categories by Forecasted Demand" icon={<FaBoxOpen />} rows={categoryForecasts} />
-                    </div>
-
-                    <section className="rd-card rd-warning-card">
-                        <FaInfoCircle />
-                        <div>
-                            <strong>Forecast scope rule</strong>
-                            <p>Only total demand, category demand, regions, and top-N provinces should be forecast reliably. Thin province/product combinations should display “Insufficient history” rather than an unsupported numerical forecast.</p>
-                        </div>
+                    <section className="rd-card">
+                        <h2>How accurate was the forecast?</h2>
+                        <p>We used {data.validation.trainingMonths} earlier months to predict the next {data.validation.months} months, then compared those predictions with the actual results.</p>
+                        <dl className="forecast-validation">
+                            <div><dt>Test period</dt><dd>{monthLabel(data.validation.start)} to {monthLabel(data.validation.end)}</dd></div>
+                            <div><dt>Average error per month (MAE)</dt><dd>{format(data.validation.mae)} {data.unit}</dd></div>
+                            <div><dt>Average percentage error (MAPE)</dt><dd>{data.validation.mape == null ? 'Not available' : format(data.validation.mape) + '%'}</dd></div>
+                        </dl>
+                        <p className="forecast-help">Lower error means the predictions were closer to the actual results.</p>
+                        {data.validation.mapeExcludedMonths > 0 && <p className="forecast-help">Percentage error excludes {data.validation.mapeExcludedMonths} months with zero actual results.</p>}
+                        <div className="rd-table-wrap"><table className="rd-table"><thead><tr><th>Month</th><th>Actual</th><th>Predicted</th></tr></thead><tbody>{data.validation.points.map(row => <tr key={row.month}><td>{monthLabel(row.month)}</td><td>{format(row.actual)}</td><td>{format(row.predicted)}</td></tr>)}</tbody></table></div>
+                        <details className="forecast-details"><summary>How the forecast is checked</summary><p>A simple comparison method repeats the last known monthly total. Its average test error was {format(data.validation.baselineMae)} {data.unit}. The final forecast uses all available history.</p><p>The 95% range is approximate. It assumes independent, normally distributed errors, and the lower estimate cannot fall below zero. Its actual coverage has not been verified.</p></details>
                     </section>
-                </>
-            )}
-        </div>
-    );
-}
-
-function Setup({ horizon, setHorizon, level, setLevel, model, setModel, onGenerate }) {
-    return (
-        <div className="rd-grid-two">
-            <section className="rd-card">
-                <div className="rd-card-head"><div className="rd-icon blue"><FaCalendarAlt /></div><div><h2>Forecast Setup</h2><p>Set the forecasting scope while keeping the end date tied to the latest loaded month.</p></div></div>
-                <label className="rd-field"><span>Forecast horizon</span><select value={horizon} onChange={event => setHorizon(Number(event.target.value))}><option value={6}>Next 6 months</option><option value={12}>Next 12 months</option></select></label>
-                <label className="rd-field"><span>Forecast level</span><select value={level} onChange={event => setLevel(event.target.value)}><option>Total Demand</option><option>Category</option><option>Region</option><option>Top Provinces</option></select></label>
-                <label className="rd-field"><span>Model</span><select value={model} onChange={event => setModel(event.target.value)}><option>Seasonal ARIMA</option><option>Holt-Winters / ETS</option></select></label>
-                <div className="rd-note"><FaCheckCircle /><span>Historical depth is sufficient for multi-year seasonality in the full dataset prototype.</span></div>
-                <button className="rd-primary-button" onClick={onGenerate}>Generate Forecast <FaChartLine /></button>
-            </section>
-
-            <section className="rd-card">
-                <div className="rd-card-head"><div className="rd-icon purple"><FaInfoCircle /></div><div><h2>Validation Rules</h2><p>These labels explain what makes a forecast usable.</p></div></div>
-                <div className="rd-rule-list">
-                    <Rule title="Backtesting" text="Reserve a recent historical window to calculate forecast error such as MAPE or MAE." />
-                    <Rule title="Dynamic horizon" text="Forecast from the month after the latest available record instead of hard-coding a calendar year." />
-                    <Rule title="Top-N coverage" text="Use top provinces/categories for detailed outputs and show insufficient history for sparse series." />
-                    <Rule title="Uncertainty" text="Display a confidence band so the chart does not imply exact future values." />
                 </div>
-            </section>
-        </div>
-    );
+            </>}
+        </>}
+    </div>;
 }
 
-function Rule({ title, text }) {
-    return <div className="rd-rule"><span><FaCheckCircle /></span><div><strong>{title}</strong><p>{text}</p></div></div>;
+function Kpi({ label, value, detail }) {
+    return <div className="rd-kpi"><div><small>{label}</small><strong>{value}</strong><span>{detail}</span></div></div>;
 }
 
-function Kpi({ label, value, sub }) {
-    return <div className="rd-kpi tone-blue"><div className="rd-kpi-icon"><FaChartLine /></div><div><small>{label}</small><strong>{value}</strong><span>{sub}</span></div></div>;
-}
-
-function ForecastTable({ title, icon, rows }) {
-    return <section className="rd-card"><div className="rd-card-head"><div className="rd-icon green">{icon}</div><div><h2>{title}</h2><p>Top-N only; thin series can be marked insufficient.</p></div></div><div className="rd-table-wrap"><table className="rd-table"><thead><tr><th>#</th><th>Area</th><th>Trailing actual</th><th>Forecast</th><th>Growth</th></tr></thead><tbody>{rows.map((row, index) => <tr key={row[0]}><td>{index + 1}</td><td><strong>{row[0]}</strong></td><td>{row[1].toLocaleString()}</td><td>{row[2].toLocaleString()}</td><td><span className="positive">+{row[3].toFixed(1)}%</span></td></tr>)}</tbody></table></div></section>;
+function ForecastChart({ data }) {
+    const { history, forecast } = data;
+    const all = [...history, ...forecast];
+    const max = Math.max(1, ...all.map(p => p.upper ?? p.value));
+    const x = i => 65 + i * 690 / (all.length - 1);
+    const y = value => 235 - value / max * 195;
+    const points = (rows, offset, field = 'value') => rows.map((p, i) => `${x(i + offset)},${y(p[field])}`).join(' ');
+    const band = points(forecast, history.length, 'upper') + ' ' + forecast.map((p, i) => `${x(history.length + i)},${y(p.lower)}`).reverse().join(' ');
+    return <><svg viewBox="0 0 800 290" role="img" aria-label={`Monthly ${data.unit}: historical data and ${forecast.length} forecast months with approximate 95 percent prediction intervals`} style={{ width: '100%', minHeight: 220 }}>
+        {[0, 0.5, 1].map(fraction => <g key={fraction}><line x1="65" x2="755" y1={y(max * fraction)} y2={y(max * fraction)} stroke="#e1e8f2" /><text x="58" y={y(max * fraction) + 4} textAnchor="end" fontSize="10">{format(max * fraction)}</text></g>)}
+        <polygon points={band} fill="#dbeafe" />
+        <polyline points={points(history, 0)} fill="none" stroke="#334155" strokeWidth="2.5" />
+        <polyline points={points([history.at(-1), ...forecast], history.length - 1)} fill="none" stroke="#2563eb" strokeWidth="2.5" strokeDasharray="6 3" />
+        <line x1={x(history.length - 1)} x2={x(history.length - 1)} y1="30" y2="240" stroke="#94a3b8" strokeDasharray="4 4" />
+        <text x="65" y="267" fontSize="11">{monthLabel(history[0].month)}</text><text x={x(history.length - 1)} y="267" textAnchor="middle" fontSize="11">{monthLabel(history.at(-1).month)}</text><text x="755" y="267" textAnchor="end" fontSize="11">{monthLabel(forecast.at(-1).month)}</text>
+    </svg><p>Solid gray: historical · Dashed blue: forecast · Shaded blue: prediction interval</p></>;
 }

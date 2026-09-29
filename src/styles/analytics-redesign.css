@@ -203,3 +203,16 @@
         margin-left:0;
     }
 }
+.forecast-page .rd-card > p { margin: 10px 0 14px; font-size: 13px; line-height: 1.65; color: #53627b; }
+.forecast-page .forecast-note-list { margin: 14px 0 0; padding-left: 22px; list-style: disc outside; }
+.forecast-page .forecast-note-list li { padding-left: 5px; margin: 0 0 12px; font-size: 13px; line-height: 1.65; color: #53627b; }
+.forecast-page .forecast-note-list li:last-child { margin-bottom: 0; }
+.forecast-page .forecast-note-list strong { color: #243b5f; }
+.forecast-page .forecast-validation { margin: 16px 0; display: grid; gap: 0; }
+.forecast-page .forecast-validation > div { display: flex; justify-content: space-between; gap: 16px; padding: 11px 0; border-bottom: 1px solid #edf1f5; flex-wrap: wrap; }
+.forecast-page .forecast-validation dt { font-size: 12px; color: #53627b; }
+.forecast-page .forecast-validation dd { margin: 0; font-size: 13px; font-weight: 700; color: #243b5f; }
+.forecast-page .rd-card > .forecast-help { font-size: 12px; color: #697891; }
+.forecast-page .forecast-details { margin-top: 16px; font-size: 12px; line-height: 1.65; color: #53627b; }
+.forecast-page .forecast-details summary { cursor: pointer; font-weight: 700; color: #285aa6; }
+.forecast-page .forecast-details p { margin: 10px 0 0; }

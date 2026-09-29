@@ -12,47 +12,31 @@ import {
 } from "react-icons/fa";
 
 import "../styles/analytics-redesign.css";
+import { DEFAULT_SCOPE, useAnalytics, dateRange } from "../hooks/useAnalytics";
 
-const CATEGORIES = [
-    "Shrink Wrap / Cap Seal",
-    "Bottle / Container",
-    "Tape / Adhesive",
-    "Label / Sticker",
-    "Mailer / Shipping Packaging",
-    "Protective Packaging",
-    "Plastic Bags",
-    "Packaging Accessories",
-    "Packaging / General Supplies",
-    "Other / Unclassified"
-];
-
-const REGIONS = [
-    "All Regions",
-    "Metro Manila",
-    "North Luzon",
-    "South Luzon",
-    "Visayas",
-    "Mindanao"
-];
-
-export default function AnalysisControls({ setActivePage }) {
-    const [period, setPeriod] = useState("All Available Data");
-    const [returns, setReturns] = useState("Include All");
-    const [region, setRegion] = useState("All Regions");
-    const [province, setProvince] = useState("All Provinces");
-    const [selectedCategories, setSelectedCategories] = useState(CATEGORIES);
+export default function AnalysisControls({ setActivePage, scope = DEFAULT_SCOPE, onApply }) {
+    const { data, error, loading, refresh } = useAnalytics();
+    const CATEGORIES = data?.scope.categories || [];
+    const REGIONS = ["All Regions", ...(data?.scope.regions || [])];
+    const [period, setPeriod] = useState(scope.period);
+    const [returns, setReturns] = useState(scope.returns);
+    const [regionChoice, setRegion] = useState(scope.region);
+    const region = REGIONS.includes(regionChoice) ? regionChoice : "All Regions";
+    const [provinceChoice, setProvince] = useState(scope.province);
+    const [categoryChoice, setSelectedCategories] = useState(scope.categories);
+    const selectedCategories = categoryChoice === null ? CATEGORIES : categoryChoice.filter(category => CATEGORIES.includes(category));
+    const [start, setStart] = useState(scope.start);
+    const [end, setEnd] = useState(scope.end);
 
     const provinces = useMemo(() => {
-        if (region === "Metro Manila") return ["All Provinces", "Metro Manila"];
-        if (region === "North Luzon") return ["All Provinces", "Aurora", "Bulacan", "Pampanga", "Pangasinan"];
-        if (region === "South Luzon") return ["All Provinces", "Batangas", "Cavite", "Laguna", "Quezon", "Rizal"];
-        if (region === "Visayas") return ["All Provinces", "Cebu", "Iloilo", "Leyte", "Negros Occidental"];
-        if (region === "Mindanao") return ["All Provinces", "Davao del Sur", "Misamis Oriental", "Zamboanga del Sur"];
-        return ["All Provinces", "Aurora", "Batangas", "Cavite", "Cebu", "Laguna", "Iloilo", "Pampanga", "Quezon", "Rizal"];
-    }, [region]);
+        const geography = data?.scope.geography || [];
+        return ["All Provinces", ...new Set(geography.filter(item => region === "All Regions" || item.region === region).flatMap(item => item.provinces).sort())];
+    }, [region, data]);
+    const province = provinces.includes(provinceChoice) ? provinceChoice : "All Provinces";
 
     function toggleCategory(category) {
         setSelectedCategories(current => {
+            current = current === null ? CATEGORIES : current;
             if (current.includes(category)) {
                 return current.filter(item => item !== category);
             }
@@ -65,18 +49,20 @@ export default function AnalysisControls({ setActivePage }) {
     }
 
     function selectAll() {
-        setSelectedCategories(CATEGORIES);
+        setSelectedCategories(null);
     }
 
     function applyControls() {
+        onApply?.({ period, returns, region, province, categories: categoryChoice === null ? null : selectedCategories, start, end });
         if (setActivePage) {
             setActivePage("descriptive-analytics");
         }
     }
 
     const periodText = period === "All Available Data"
-        ? "Jan 2021 – Nov 2025"
-        : period;
+        ? dateRange(data?.scope)
+        : period === "Custom Range" ? `${start || "Start date"} – ${end || "End date"}` : period;
+    const validDates = period !== "Custom Range" || (start && end && start <= end);
 
     return (
         <div className="rd-page">
@@ -88,12 +74,16 @@ export default function AnalysisControls({ setActivePage }) {
                 </div>
                 <div className="rd-header-note">
                     <span>Current dataset</span>
-                    <strong>Jan 2021 – Nov 2025</strong>
-                    <small>59 months of demand history</small>
+                    <strong>{dateRange(data?.scope)}</strong>
+                    <small>Prepared data from Supabase</small>
                 </div>
             </div>
 
-            <div className="rd-control-layout">
+            {loading && <div className="rd-card" role="status">Loading analysis scope…</div>}
+            {error && <div className="rd-card" role="alert">{error} <button onClick={refresh}>Retry</button></div>}
+            {data?.empty && <div className="rd-card" role="status">Run Data Preparation first.</div>}
+            {data && !data.empty && !data.scope.eligibleRecords && <div className="rd-card" role="status">No transactions are eligible for analysis. Review Data Preparation.</div>}
+            <div className="rd-control-layout" aria-busy={loading}>
                 <div className="rd-stack">
                     <section className="rd-card">
                         <div className="rd-card-head">
@@ -121,6 +111,11 @@ export default function AnalysisControls({ setActivePage }) {
                             ))}
                         </div>
 
+                        {period === "Custom Range" && <div className="rd-field-grid two">
+                            <label className="rd-field"><span>Start date</span><input type="date" value={start} onChange={event => setStart(event.target.value)} /></label>
+                            <label className="rd-field"><span>End date</span><input type="date" value={end} min={start} onChange={event => setEnd(event.target.value)} /></label>
+                        </div>}
+                        {!validDates && <p role="alert">Choose a start date and an end date on or after it.</p>}
                         <div className="rd-date-summary">
                             <span>Selected period</span>
                             <strong>{periodText}</strong>
@@ -151,7 +146,7 @@ export default function AnalysisControls({ setActivePage }) {
 
                         <div className="rd-note">
                             <FaInfoCircle />
-                            <span>The control changes the quantity and return treatment used by downstream analytics. Order Status remains an ETL/data-quality attribute rather than a user-facing analysis filter.</span>
+                            <span>Revenue uses prepared line revenue; quantity uses net quantity. Excluding approved returns removes those lines. Returned / Refunded Only includes approved returns or lines with a positive returned quantity.</span>
                         </div>
                     </section>
 
@@ -222,7 +217,7 @@ export default function AnalysisControls({ setActivePage }) {
                             <div className="rd-icon navy"><FaLayerGroup /></div>
                             <div>
                                 <h2>Active Analysis Scope</h2>
-                                <p>This scope is intended to flow through every analytics page.</p>
+                                <p>Apply this scope to Descriptive Analytics.</p>
                             </div>
                         </div>
 
@@ -235,11 +230,11 @@ export default function AnalysisControls({ setActivePage }) {
 
                         <div className="rd-preview-box">
                             <span>Prepared transaction lines</span>
-                            <strong>60,464</strong>
+                            <strong>{data ? data.scope.preparedRecords.toLocaleString() : "—"}</strong>
                             <small>before the selected scope is applied</small>
                         </div>
 
-                        <button className="rd-primary-button" onClick={applyControls}>
+                        <button className="rd-primary-button" disabled={loading || !!error || !data?.scope.eligibleRecords || !validDates} onClick={applyControls}>
                             Apply Scope <FaArrowRight />
                         </button>
                     </section>

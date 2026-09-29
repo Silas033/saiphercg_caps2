@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import {
     FaMoneyBillWave,
     FaShoppingCart,
@@ -14,163 +14,35 @@ import {
 } from "react-icons/fa";
 
 import "../styles/analytics-redesign.css";
+import { DEFAULT_SCOPE, useAnalytics, money, monthLabel } from "../hooks/useAnalytics";
 
-const months = [
-    "Dec 24", "Jan 25", "Feb 25", "Mar 25", "Apr 25", "May 25",
-    "Jun 25", "Jul 25", "Aug 25", "Sep 25", "Oct 25", "Nov 25"
-];
-
-const trendData = {
-    Revenue: [8.7, 9.1, 9.4, 9.8, 10.1, 10.5, 10.3, 11.1, 11.4, 11.9, 12.2, 12.8],
-    Orders: [712, 748, 781, 805, 832, 861, 846, 902, 935, 961, 989, 1016],
-    Quantity: [2310, 2445, 2581, 2704, 2810, 2944, 2892, 3105, 3220, 3341, 3460, 3575]
-};
-
-const regionData = [
-    {
-        name: "South Luzon",
-        share: 61.7,
-        provinces: [
-            { name: "Laguna", revenue: 13.96, orders: 4610, quantity: 17480 },
-            { name: "Cavite", revenue: 12.84, orders: 4320, quantity: 16040 },
-            { name: "Batangas", revenue: 10.95, orders: 3710, quantity: 13880 },
-            { name: "Rizal", revenue: 8.31, orders: 2920, quantity: 10520 },
-            { name: "Quezon", revenue: 5.42, orders: 2015, quantity: 7420 }
-        ]
-    },
-    {
-        name: "Visayas",
-        share: 17.4,
-        provinces: [
-            { name: "Cebu", revenue: 14.82, orders: 4850, quantity: 18320 },
-            { name: "Iloilo", revenue: 8.92, orders: 3190, quantity: 11740 },
-            { name: "Negros Occidental", revenue: 5.18, orders: 1960, quantity: 7210 },
-            { name: "Leyte", revenue: 3.71, orders: 1420, quantity: 5140 },
-            { name: "Bohol", revenue: 3.28, orders: 1280, quantity: 4680 }
-        ]
-    },
-    {
-        name: "North Luzon",
-        share: 11.8,
-        provinces: [
-            { name: "Pampanga", revenue: 9.86, orders: 3420, quantity: 12510 },
-            { name: "Bulacan", revenue: 7.41, orders: 2715, quantity: 10020 },
-            { name: "Pangasinan", revenue: 4.92, orders: 1840, quantity: 6920 },
-            { name: "Nueva Ecija", revenue: 3.66, orders: 1395, quantity: 5170 },
-            { name: "Tarlac", revenue: 3.12, orders: 1180, quantity: 4310 }
-        ]
-    },
-    {
-        name: "Mindanao",
-        share: 7.4,
-        provinces: [
-            { name: "Davao del Sur", revenue: 8.58, orders: 3010, quantity: 10890 },
-            { name: "Misamis Oriental", revenue: 4.14, orders: 1580, quantity: 5770 },
-            { name: "Cagayan de Oro", revenue: 3.62, orders: 1385, quantity: 5050 },
-            { name: "Davao del Norte", revenue: 3.21, orders: 1250, quantity: 4510 },
-            { name: "Bukidnon", revenue: 2.64, orders: 1020, quantity: 3650 }
-        ]
-    },
-    {
-        name: "Metro Manila",
-        share: 1.7,
-        provinces: [
-            { name: "Manila", revenue: 3.32, orders: 1290, quantity: 4620 },
-            { name: "Quezon City", revenue: 2.96, orders: 1155, quantity: 4140 },
-            { name: "Pasig", revenue: 2.21, orders: 865, quantity: 3120 },
-            { name: "Makati", revenue: 1.94, orders: 742, quantity: 2690 },
-            { name: "Taguig", revenue: 1.72, orders: 665, quantity: 2430 }
-        ]
-    }
-];
-
-const allProvinces = regionData.flatMap(region =>
-    region.provinces.map(province => ({
-        ...province,
-        region: region.name
-    }))
-);
-
-const baseCategories = [
-    { name: "Shrink Wrap / Cap Seal", revenue: 11.3, quantity: 36200, share: 24.5 },
-    { name: "Plastic Bags", revenue: 9.8, quantity: 41800, share: 22.1 },
-    { name: "Bottle / Container", revenue: 7.7, quantity: 22300, share: 16.8 },
-    { name: "Tape / Adhesive", revenue: 6.4, quantity: 19600, share: 13.7 },
-    { name: "Label / Sticker", revenue: 4.7, quantity: 14100, share: 10.2 }
-];
-
-/* Frontend prototype scope data. This can be replaced later by API results. */
-const categoryAdjustments = {
-    Laguna: [1.06, 1.02, 0.96, 1.01, 0.98],
-    Cavite: [0.98, 1.08, 1.02, 0.99, 1.03],
-    Batangas: [1.01, 0.97, 1.07, 1.05, 0.96],
-    Rizal: [0.95, 1.04, 1.08, 1.01, 1.06],
-    Quezon: [0.91, 1.06, 1.00, 1.09, 0.94],
-    Cebu: [1.03, 1.04, 1.06, 0.96, 1.01],
-    Iloilo: [0.97, 1.06, 1.04, 0.98, 1.02],
-    "Negros Occidental": [0.94, 1.01, 1.07, 1.03, 1.00],
-    Leyte: [0.91, 1.02, 1.03, 1.05, 0.96],
-    Bohol: [0.95, 1.05, 0.99, 1.01, 1.03],
-    Pampanga: [1.05, 1.02, 0.99, 1.04, 1.01],
-    Bulacan: [1.03, 1.06, 1.01, 1.00, 1.02],
-    Pangasinan: [0.96, 1.01, 1.04, 1.05, 0.98],
-    "Nueva Ecija": [0.94, 1.03, 1.02, 1.00, 1.05],
-    Tarlac: [0.93, 1.04, 1.01, 1.03, 1.00],
-    "Davao del Sur": [1.02, 1.05, 1.03, 0.97, 1.01],
-    "Misamis Oriental": [0.96, 1.02, 1.05, 1.01, 0.98],
-    "Cagayan de Oro": [1.00, 1.04, 1.06, 0.99, 1.02],
-    "Davao del Norte": [0.95, 1.05, 1.00, 1.02, 1.03],
-    Bukidnon: [0.93, 1.03, 1.02, 1.05, 0.97],
-    Manila: [0.98, 1.02, 1.08, 1.04, 1.06],
-    "Quezon City": [1.01, 1.03, 1.06, 1.02, 1.04],
-    Pasig: [0.99, 1.04, 1.03, 1.02, 1.05],
-    Makati: [1.04, 1.01, 1.08, 1.03, 1.06],
-    Taguig: [1.02, 1.03, 1.05, 1.01, 1.04]
-};
-
-export default function DescriptiveAnalytics() {
+export default function DescriptiveAnalytics({ scope = DEFAULT_SCOPE }) {
+    const { data, error, loading, refresh } = useAnalytics(scope);
     const [metric, setMetric] = useState("Revenue");
     const [geoTab, setGeoTab] = useState("Top Provinces");
-    const [selectedRegion, setSelectedRegion] = useState("South Luzon");
-    const [selectedProvince, setSelectedProvince] = useState("Laguna");
-
+    const [selectedRegion, setSelectedRegion] = useState("");
+    const [selectedProvince, setSelectedProvince] = useState("");
+    if (loading || error || !data || !data.summary.rows) {
+        return <div className="rd-page"><h1>Descriptive Analytics</h1><div className="rd-card" role={error ? "alert" : "status"}>
+            {loading ? "Loading analytics…" : error || (data?.empty ? "Run Data Preparation first." : "No eligible transactions match this scope. Adjust Analysis Controls.")}
+            {error && <button onClick={refresh}>Retry</button>}
+        </div></div>;
+    }
+    const regionData = data.regions;
+    const allProvinces = regionData.flatMap(region => region.provinces);
+    const months = data.trend.map(item => monthLabel(item.name));
+    const trendData = Object.fromEntries(["Revenue", "Orders", "Quantity"].map(name => [name, data.trend.map(item => item[name.toLowerCase()])]));
     const values = trendData[metric];
-    const max = Math.max(...values);
-
-    const latest = values[values.length - 1];
-    const previous = values[values.length - 2];
-    const change = ((latest - previous) / previous) * 100;
-
-    const formattedLatest = useMemo(() => {
-        if (metric === "Revenue") return `₱${latest.toFixed(1)}M`;
-        return latest.toLocaleString();
-    }, [latest, metric]);
-
+    const max = Math.max(1, ...values);
+    const latest = values.at(-1) || 0;
+    const previous = values.at(-2);
+    const change = previous ? (latest - previous) / previous * 100 : null;
+    const formattedLatest = metric === "Revenue" ? money(latest) : latest.toLocaleString();
     const activeRegion = regionData.find(item => item.name === selectedRegion) || regionData[0];
-    const activeProvince = allProvinces.find(item => item.name === selectedProvince && item.region === selectedRegion)
-        || activeRegion.provinces[0];
-
-    const scopedCategories = useMemo(() => {
-        const multipliers = categoryAdjustments[selectedProvince] || [1, 1, 1, 1, 1];
-        return baseCategories.map((item, index) => ({
-            ...item,
-            revenue: item.revenue * multipliers[index],
-            quantity: Math.round(item.quantity * multipliers[index]),
-            share: item.share * multipliers[index]
-        }));
-    }, [selectedProvince]);
-
-    const selectRegion = regionName => {
-        const region = regionData.find(item => item.name === regionName);
-        if (!region) return;
-        setSelectedRegion(regionName);
-        setSelectedProvince(region.provinces[0]?.name || "");
-    };
-
-    const selectProvince = (provinceName, regionName) => {
-        setSelectedRegion(regionName);
-        setSelectedProvince(provinceName);
-    };
+    const activeProvince = activeRegion.provinces.find(item => item.name === selectedProvince) || activeRegion.provinces[0];
+    const scopedCategories = activeProvince.categories;
+    const selectRegion = name => { setSelectedRegion(name); setSelectedProvince(""); };
+    const selectProvince = (name, region) => { setSelectedRegion(region); setSelectedProvince(name); };
 
     return (
         <div className="rd-page">
@@ -182,16 +54,16 @@ export default function DescriptiveAnalytics() {
                 </div>
                 <div className="rd-header-note">
                     <span>Active period</span>
-                    <strong>Jan 2021 – Nov 2025</strong>
-                    <small>Current scope: all available data</small>
+                    <strong>{months[0]} – {months.at(-1)}</strong>
+                    <small>{scope.region} · {scope.province} · {scope.returns} · {scope.categories === null ? "All categories" : `${scope.categories.length} categories`}</small>
                 </div>
             </div>
 
             <div className="rd-kpi-grid four">
-                <Kpi icon={<FaMoneyBillWave />} label="Total Revenue" value="₱352.5M" detail="Across prepared transaction lines" tone="blue" />
-                <Kpi icon={<FaShoppingCart />} label="Distinct Orders" value="40,014" detail="Order ID counted once" tone="purple" />
-                <Kpi icon={<FaCubes />} label="Quantity Sold" value="1.25M" detail="Net quantity available for analysis" tone="green" />
-                <Kpi icon={<FaChartLine />} label="Latest Month" value="Nov 2025" detail={`${formattedLatest} ${metric.toLowerCase()} in selected view`} tone="amber" />
+                <Kpi icon={<FaMoneyBillWave />} label="Total Revenue" value={money(data.summary.revenue)} detail="Across prepared transaction lines" tone="blue" />
+                <Kpi icon={<FaShoppingCart />} label="Distinct Orders" value={data.summary.orders.toLocaleString()} detail="Order ID counted once" tone="purple" />
+                <Kpi icon={<FaCubes />} label="Quantity Sold" value={data.summary.quantity.toLocaleString()} detail="Net quantity available for analysis" tone="green" />
+                <Kpi icon={<FaChartLine />} label="Latest Month" value={months.at(-1) || "No dated rows"} detail={`${formattedLatest} ${metric.toLowerCase()} in selected view`} tone="amber" />
             </div>
 
             <div className="rd-grid-two">
@@ -210,8 +82,8 @@ export default function DescriptiveAnalytics() {
 
                     <div className="rd-trend-chart">
                         <div className="rd-y-labels">
-                            <span>{metric === "Revenue" ? `₱${max.toFixed(0)}M` : Math.round(max).toLocaleString()}</span>
-                            <span>{metric === "Revenue" ? "₱0M" : "0"}</span>
+                            <span>{metric === "Revenue" ? money(max) : Math.round(max).toLocaleString()}</span>
+                            <span>{metric === "Revenue" ? "₱0" : "0"}</span>
                         </div>
                         <div className="rd-chart-area">
                             <div className="rd-gridline g1" />
@@ -225,19 +97,19 @@ export default function DescriptiveAnalytics() {
                                     strokeLinejoin="round"
                                     strokeLinecap="round"
                                     points={values.map((value, index) => {
-                                        const x = 10 + index * (580 / (values.length - 1));
+                                        const x = 10 + index * (580 / Math.max(1, values.length - 1));
                                         const y = 220 - ((value / max) * 190);
                                         return `${x},${y}`;
                                     }).join(" ")}
                                 />
                                 {values.map((value, index) => {
-                                    const x = 10 + index * (580 / (values.length - 1));
+                                    const x = 10 + index * (580 / Math.max(1, values.length - 1));
                                     const y = 220 - ((value / max) * 190);
                                     return <circle key={index} cx={x} cy={y} r="4.5" fill="white" stroke="currentColor" strokeWidth="3" />;
                                 })}
                             </svg>
                             <div className="rd-x-labels">
-                                {months.map(item => <span key={item}>{item}</span>)}
+                                {months.filter((_, index) => index % Math.max(1, Math.ceil(months.length / 6)) === 0 || index === months.length - 1).map(item => <span key={item}>{item}</span>)}
                             </div>
                         </div>
                     </div>
@@ -247,9 +119,9 @@ export default function DescriptiveAnalytics() {
                             <span>Latest</span>
                             <strong>{formattedLatest}</strong>
                         </div>
-                        <div className={change >= 0 ? "positive" : "negative"}>
-                            {change >= 0 ? <FaArrowUp /> : <FaArrowDown />}
-                            {Math.abs(change).toFixed(1)}% vs previous month
+                        <div className={change === null ? "" : change >= 0 ? "positive" : "negative"}>
+                            {change !== null && (change >= 0 ? <FaArrowUp /> : <FaArrowDown />)}
+                            {change === null ? "No previous nonzero month for comparison" : `${Math.abs(change).toFixed(1)}% vs previous month`}
                         </div>
                     </div>
                 </section>
@@ -281,8 +153,8 @@ export default function DescriptiveAnalytics() {
                                 .map((item, index) => (
                                     <button
                                         type="button"
-                                        className={`rd-rank-row rd-rank-button ${selectedProvince === item.name ? "selected-row" : ""}`}
-                                        key={item.name}
+                                        className={`rd-rank-row rd-rank-button ${activeProvince.name === item.name && activeRegion.name === item.region ? "selected-row" : ""}`}
+                                        key={`${item.region || ""}/${item.name}`}
                                         onClick={() => selectProvince(item.name, item.region)}
                                     >
                                         <span className="rank-number">{index + 1}</span>
@@ -291,7 +163,7 @@ export default function DescriptiveAnalytics() {
                                             <small>{item.region}</small>
                                         </div>
                                         <div className="rank-stat">
-                                            <strong>₱{item.revenue.toFixed(2)}M</strong>
+                                            <strong>{money(item.revenue)}</strong>
                                             <small>{item.orders.toLocaleString()} orders</small>
                                         </div>
                                     </button>
@@ -300,7 +172,7 @@ export default function DescriptiveAnalytics() {
                     ) : (
                         <div className="rd-region-list">
                             {regionData.map((region, index) => {
-                                const isOpen = selectedRegion === region.name;
+                                const isOpen = activeRegion.name === region.name;
                                 return (
                                     <div className="rd-region-block" key={region.name}>
                                         <button
@@ -334,7 +206,7 @@ export default function DescriptiveAnalytics() {
                                                     <button
                                                         type="button"
                                                         key={province.name}
-                                                        className={`rd-breakout-row ${selectedProvince === province.name ? "selected-row" : ""}`}
+                                                        className={`rd-breakout-row ${activeProvince.name === province.name ? "selected-row" : ""}`}
                                                         onClick={() => selectProvince(province.name, region.name)}
                                                     >
                                                         <span className="rank-number small">{provinceIndex + 1}</span>
@@ -343,7 +215,7 @@ export default function DescriptiveAnalytics() {
                                                             <small>{province.orders.toLocaleString()} orders · {province.quantity.toLocaleString()} units</small>
                                                         </div>
                                                         <div className="rank-stat">
-                                                            <strong>₱{province.revenue.toFixed(2)}M</strong>
+                                                            <strong>{money(province.revenue)}</strong>
                                                             <small>Revenue</small>
                                                         </div>
                                                     </button>
@@ -377,12 +249,12 @@ export default function DescriptiveAnalytics() {
                 <div className="rd-scope-bar">
                     <div>
                         <span>Region</span>
-                        <strong>{selectedRegion}</strong>
+                        <strong>{activeRegion.name}</strong>
                     </div>
                     <span className="rd-scope-arrow">→</span>
                     <div>
                         <span>Province</span>
-                        <strong>{selectedProvince}</strong>
+                        <strong>{activeProvince.name}</strong>
                     </div>
                     <span className="rd-scope-note">Category results below are shown within this selected scope.</span>
                 </div>
@@ -399,9 +271,9 @@ export default function DescriptiveAnalytics() {
                         </thead>
                         <tbody>
                             {scopedCategories.map(item => (
-                                <tr key={item.name}>
+                                <tr key={`${item.region || ""}/${item.name}`}>
                                     <td><strong>{item.name}</strong></td>
-                                    <td>₱{item.revenue.toFixed(1)}M</td>
+                                    <td>{money(item.revenue)}</td>
                                     <td>{item.quantity.toLocaleString()}</td>
                                     <td><span className="rd-tag">{item.share.toFixed(1)}%</span></td>
                                 </tr>
@@ -421,9 +293,9 @@ export default function DescriptiveAnalytics() {
                         </div>
                     </div>
                     <div className="rd-insights">
-                        <Insight title="Latest month increased" text="The selected metric is higher than the previous month in the current display." />
+                        <Insight title={change === null ? "Monthly comparison unavailable" : change > 0 ? "Latest month increased" : change < 0 ? "Latest month decreased" : "Latest month unchanged"} text={change === null ? "A previous nonzero month is required to calculate percentage change." : `The selected metric changed by ${change.toFixed(1)}% versus the previous month.`} />
                         <Insight title="Demand is geographically concentrated" text={`${activeRegion.name} contributes ${activeRegion.share.toFixed(1)}% of displayed revenue. The selected province is ${activeProvince.name}.`} />
-                        <Insight title="Category results follow the selected scope" text={`The category table is currently showing performance within ${selectedRegion} → ${selectedProvince}.`} />
+                        <Insight title="Category results follow the selected scope" text={`The category table is currently showing performance within ${activeRegion.name} → ${activeProvince.name}.`} />
                         <Insight title="Use category drill-down for sparse products" text="Long product titles and thin product-province combinations are better examined after category-level analysis." />
                     </div>
                 </section>
