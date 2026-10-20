@@ -1,0 +1,9 @@
+{
+  "name": "saipher-login-frontend",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Saipher Co. dashboard login frontend",
+  "scripts": {
+    "start": "node server.js"
+  }
+}

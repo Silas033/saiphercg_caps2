@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Saipher Co. administrator dashboard login" />
+    <title>Dashboard Login | Saipher Co.</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="page-shell">
+      <section class="login-stage" aria-label="Administrator account access">
+        <div class="login-card" id="login-card">
+          <div class="brand-mark" aria-label="Saipher Co.">S</div>
+          <p class="brand-name">Saipher Co.</p>
+
+          <div class="view view-login" data-view="login">
+            <h2>Dashboard Login</h2>
+            <p class="card-copy">Sign in with an approved administrator account to manage the storefront.</p>
+            <form id="login-form" novalidate>
+              <div class="field-group">
+                <label for="email">Email</label>
+                <input id="email" name="email" type="email" autocomplete="email" placeholder="admin@example.com" required />
+                <span class="field-error" id="email-error" aria-live="polite"></span>
+              </div>
+              <div class="field-group">
+                <label for="password">Password</label>
+                <div class="password-wrap">
+                  <input id="password" name="password" type="password" autocomplete="current-password" placeholder="Enter your password" required minlength="6" />
+                  <button class="show-button" id="toggle-password" type="button" aria-label="Show password">Show</button>
+                </div>
+                <span class="field-error" id="password-error" aria-live="polite"></span>
+              </div>
+              <button class="primary-button" type="submit">Sign In</button>
+              <p class="form-message" id="login-message" role="status"></p>
+            </form>
+            <button class="text-button" id="forgot-button" type="button">Set / Forgot Password</button>
+          </div>
+
+          <div class="view view-reset" data-view="reset" hidden>
+            <h2>Set / Reset Password</h2>
+            <p class="card-copy">Use this for an invited administrator who never created a password, or for a forgotten password.</p>
+            <form id="reset-form" novalidate>
+              <div class="field-group">
+                <label for="reset-email">Email</label>
+                <input id="reset-email" name="reset-email" type="email" autocomplete="email" placeholder="admin@example.com" required />
+                <span class="field-error" id="reset-email-error" aria-live="polite"></span>
+              </div>
+              <button class="primary-button" type="submit">Send Password Setup Email</button>
+              <p class="form-message" id="reset-message" role="status"></p>
+            </form>
+            <button class="text-button" id="back-button" type="button">Back to Sign In</button>
+            <div class="important-note"><strong>Important:</strong> The reset email returns to this local dashboard. Keep the dashboard server running before opening the email link.</div>
+          </div>
+
+          <p class="trusted-note">This dashboard is intended to run only on the trusted local computer.</p>
+        </div>
+      </section>
+    </main>
+    <script src="app.js"></script>
+  </body>
+</html>
