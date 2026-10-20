@@ -37,29 +37,13 @@
               <button class="primary-button" type="submit">Sign In</button>
               <p class="form-message" id="login-message" role="status"></p>
             </form>
-            <button class="text-button" id="forgot-button" type="button">Set / Forgot Password</button>
-          </div>
-
-          <div class="view view-reset" data-view="reset" hidden>
-            <h2>Set / Reset Password</h2>
-            <p class="card-copy">Use this for an invited administrator who never created a password, or for a forgotten password.</p>
-            <form id="reset-form" novalidate>
-              <div class="field-group">
-                <label for="reset-email">Email</label>
-                <input id="reset-email" name="reset-email" type="email" autocomplete="email" placeholder="admin@example.com" required />
-                <span class="field-error" id="reset-email-error" aria-live="polite"></span>
-              </div>
-              <button class="primary-button" type="submit">Send Password Setup Email</button>
-              <p class="form-message" id="reset-message" role="status"></p>
-            </form>
-            <button class="text-button" id="back-button" type="button">Back to Sign In</button>
-            <div class="important-note"><strong>Important:</strong> The reset email returns to this local dashboard. Keep the dashboard server running before opening the email link.</div>
+            <p class="trusted-note">Contact the system administrator if you need account or password assistance.</p>
           </div>
 
           <p class="trusted-note">This dashboard is intended to run only on the trusted local computer.</p>
         </div>
       </section>
     </main>
-    <script src="app.js"></script>
+    <script type="module" src="app.js"></script>
   </body>
 </html>
