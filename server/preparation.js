@@ -1756,30 +1756,35 @@ export function createPreparationService({
                 {
                     field: "Year",
                     source: "Order Creation Date",
+                    format: "YYYY",
                     example: "2025"
                 },
 
                 {
                     field: "Month",
                     source: "Order Creation Date",
+                    format: "Full month name",
                     example: "November"
                 },
 
                 {
                     field: "Month Number",
                     source: "Order Creation Date",
+                    format: "1 to 12",
                     example: "11"
                 },
 
                 {
                     field: "Year-Month",
                     source: "Order Creation Date",
+                    format: "YYYY-MM",
                     example: "2025-11"
                 },
 
                 {
                     field: "Quarter",
                     source: "Order Creation Date",
+                    format: "Q1 to Q4",
                     example: "Q4"
                 }
             ]
@@ -1965,6 +1970,34 @@ export function createPreparationService({
         return build().timeFields;
     }
 
+    function timeSummary() {
+
+        const result = build();
+        const periods = new Map();
+
+        result.master.forEach(row => {
+            if (!row.year_month) return;
+
+            if (!periods.has(row.year_month)) {
+                periods.set(row.year_month, {
+                    yearMonth: row.year_month,
+                    monthName: row.month_name,
+                    quarter: row.quarter,
+                    records: 0
+                });
+            }
+
+            periods.get(row.year_month).records += 1;
+        });
+
+        return {
+            preparedRecords: result.master.filter(row => row.year != null && row.month != null && row.month_number != null && row.month_name && row.year_month && row.quarter).length,
+            sourceRecords: result.state.source.transactionLines,
+            needsReview: result.quality.invalidDateRecords,
+            periods: [...periods.values()].sort((a, b) => a.yearMonth.localeCompare(b.yearMonth))
+        };
+    }
+
     function run() {
 
         cachedBuild = null;
@@ -2112,6 +2145,8 @@ export function createPreparationService({
 
         timeFields:
             getTimeFields,
+
+        timeSummary,
 
         run,
 

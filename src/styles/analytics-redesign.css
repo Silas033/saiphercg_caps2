@@ -203,19 +203,25 @@
         margin-left:0;
     }
 }
-
-/* ---------- Analysis Controls <-> Descriptive wiring additions ---------- */
-
-.rd-applied-note {
-    margin-top: 10px;
-    font-size: 10px;
-    color: #7b899d;
-    text-align: center;
-}
-
-.rd-empty-note {
-    padding: 16px 4px;
-    color: #8a96a8;
-    font-size: 11px;
-    text-align: center;
-}
+.forecast-page .rd-card > p { margin: 10px 0 14px; font-size: 13px; line-height: 1.65; color: #53627b; }
+.forecast-page .forecast-note-list { margin: 14px 0 0; padding-left: 22px; list-style: disc outside; }
+.forecast-page .forecast-note-list li { padding-left: 5px; margin: 0 0 12px; font-size: 13px; line-height: 1.65; color: #53627b; }
+.forecast-page .forecast-note-list li:last-child { margin-bottom: 0; }
+.forecast-page .forecast-note-list strong { color: #243b5f; }
+.forecast-page .forecast-validation { margin: 16px 0; display: grid; gap: 0; }
+.forecast-page .forecast-validation > div { display: flex; justify-content: space-between; gap: 16px; padding: 11px 0; border-bottom: 1px solid #edf1f5; flex-wrap: wrap; }
+.forecast-page .forecast-validation dt { font-size: 12px; color: #53627b; }
+.forecast-page .forecast-validation dd { margin: 0; font-size: 13px; font-weight: 700; color: #243b5f; }
+.forecast-page .rd-card > .forecast-help { font-size: 12px; color: #697891; }
+.forecast-page .forecast-details { margin-top: 16px; font-size: 12px; line-height: 1.65; color: #53627b; }
+.forecast-page .forecast-details summary { cursor: pointer; font-weight: 700; color: #285aa6; }
+.forecast-page .forecast-details p { margin: 10px 0 0; }
+.rd-handoff{display:flex;justify-content:space-between;align-items:center;gap:18px;margin-top:18px;padding:18px 22px;border-radius:14px;background:linear-gradient(110deg,#10253f,#193b61);color:#fff}
+.rd-handoff div{display:flex;flex-direction:column;gap:5px}
+.rd-handoff strong{font-size:16px}
+.rd-handoff small{color:#d2deec;font-size:10px}
+.rd-handoff button{flex:0 0 auto;padding:10px 14px;border:0;border-radius:9px;background:#2b8fe5;color:#fff;font-size:10px;font-weight:800;cursor:pointer}
+.rd-handoff button:hover:not(:disabled){background:#1e7ac9}
+.rd-handoff button:focus-visible{outline:3px solid #9fc0f5;outline-offset:2px}
+.rd-handoff button:disabled{opacity:.55;cursor:not-allowed}
+@media(max-width:700px){.rd-handoff{align-items:stretch;flex-direction:column}.rd-handoff button{width:100%}}

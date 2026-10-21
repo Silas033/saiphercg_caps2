@@ -22,7 +22,7 @@ const navigation = [
     },
     {
         id: "analysis-controls",
-        label: "Analysis Controls",
+        label: "Analytics Scope",
         icon: <FaSlidersH />
     },
     {

@@ -10,7 +10,9 @@ import {
     FaCheckCircle,
     FaDatabase,
     FaBoxOpen,
-    FaMapMarkerAlt
+    FaMapMarkerAlt,
+    FaLock,
+    FaLockOpen
 } from "react-icons/fa";
 
 import "../styles/data-management.css";
@@ -39,6 +41,8 @@ export default function DataManagement() {
     const [loading, setLoading] = useState(false);
 
     const [dragging, setDragging] = useState(false);
+
+    const [uploadLocked, setUploadLocked] = useState(true);
 
     const [selectedFile, setSelectedFile] = useState(null);
 
@@ -94,7 +98,7 @@ export default function DataManagement() {
 
     async function uploadFiles(selectedFiles) {
 
-        if (!selectedFiles.length) {
+        if (uploadLocked || !selectedFiles.length) {
             return;
         }
 
@@ -161,6 +165,11 @@ export default function DataManagement() {
 
     function handleFileChange(event) {
 
+        if (uploadLocked) {
+            event.target.value = "";
+            return;
+        }
+
         const selected =
             Array.from(
                 event.target.files
@@ -182,6 +191,10 @@ export default function DataManagement() {
         event.preventDefault();
 
         setDragging(false);
+
+        if (uploadLocked) {
+            return;
+        }
 
         const droppedFiles =
             Array.from(
@@ -437,18 +450,37 @@ export default function DataManagement() {
 
                 <section className="upload-card">
 
+                    <div className="upload-safety-row">
+                        <div>
+                            <strong>Upload safety</strong>
+                            <small>Lock uploads to prevent accidental file selection.</small>
+                        </div>
+                        <button
+                            type="button"
+                            className={`upload-lock-toggle ${uploadLocked ? "locked" : "unlocked"}`}
+                            role="switch"
+                            aria-checked={uploadLocked}
+                            aria-label={uploadLocked ? "Unlock file uploads" : "Lock file uploads"}
+                            disabled={loading}
+                            onClick={() => {
+                                setUploadLocked(current => !current);
+                                setDragging(false);
+                            }}
+                        >
+                            {uploadLocked ? <FaLock aria-hidden="true" /> : <FaLockOpen aria-hidden="true" />}
+                            <span>{uploadLocked ? "Locked" : "Unlocked"}</span>
+                        </button>
+                    </div>
+
                     <div
-                        className={
-                            dragging
-                                ? "upload-zone dragging"
-                                : "upload-zone"
-                        }
+                        className={`upload-zone${dragging ? " dragging" : ""}${uploadLocked ? " locked" : ""}`}
+                        aria-disabled={uploadLocked}
 
                         onDragOver={(event) => {
 
                             event.preventDefault();
 
-                            setDragging(true);
+                            if (!uploadLocked) setDragging(true);
 
                         }}
 
@@ -458,9 +490,9 @@ export default function DataManagement() {
 
                         onDrop={handleDrop}
 
-                        onClick={() =>
-                            fileInputRef.current?.click()
-                        }
+                        onClick={() => {
+                            if (!uploadLocked && !loading) fileInputRef.current?.click();
+                        }}
                     >
 
                         <FaCloudUploadAlt
@@ -483,12 +515,13 @@ export default function DataManagement() {
                         <button
                             className="browse-button"
                             type="button"
+                            disabled={uploadLocked || loading}
 
                             onClick={(event) => {
 
                                 event.stopPropagation();
 
-                                fileInputRef.current?.click();
+                                if (!uploadLocked && !loading) fileInputRef.current?.click();
 
                             }}
                         >
@@ -506,6 +539,7 @@ export default function DataManagement() {
                             type="file"
                             multiple
                             accept=".xlsx,.xls"
+                            disabled={uploadLocked || loading}
                             hidden
                             onChange={handleFileChange}
                         />

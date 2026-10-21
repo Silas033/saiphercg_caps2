@@ -1,237 +1,267 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import {
-  FaCalendarAlt, FaUndo, FaMapMarkerAlt, FaLayerGroup, FaBoxOpen,
-  FaCheckCircle, FaInfoCircle, FaArrowRight, FaSyncAlt, FaExclamationTriangle
+    FaCalendarAlt,
+    FaUndo,
+    FaMapMarkerAlt,
+    FaLayerGroup,
+    FaBoxOpen,
+    FaCheckCircle,
+    FaInfoCircle,
+    FaArrowRight,
+    FaTimes
 } from "react-icons/fa";
-import "../styles/analytics-functional.css";
-import { PERIOD_PRESETS, RETURNS_OPTIONS } from "../data/analyticsScope";
-import { fetchAnalyticsOptions, fetchDescriptive } from "../data/analyticsApi";
 
-const clone = scope => ({
-  period: scope?.period || "All Available Data",
-  customStart: scope?.customStart || null,
-  customEnd: scope?.customEnd || null,
-  returns: scope?.returns || "Include All",
-  region: scope?.region || "All Regions",
-  province: scope?.province || "All Provinces",
-  categories: Array.isArray(scope?.categories) ? [...scope.categories] : null
-});
+import "../styles/analytics-redesign.css";
+import { DEFAULT_SCOPE, useAnalytics, dateRange } from "../hooks/useAnalytics";
 
-const monthLabel = value => {
-  if (!value) return "—";
-  const [y, m] = value.split("-").map(Number);
-  return new Date(Date.UTC(y, m - 1, 1)).toLocaleString("en-US", { month: "short", year: "numeric", timeZone: "UTC" });
-};
+export default function AnalysisControls({ setActivePage, scope = DEFAULT_SCOPE, onApply }) {
+    const { data, error, loading, refresh } = useAnalytics();
+    const CATEGORIES = data?.scope.categories || [];
+    const REGIONS = ["All Regions", ...(data?.scope.regions || [])];
+    const [period, setPeriod] = useState(scope.period);
+    const [returns, setReturns] = useState(scope.returns);
+    const [regionChoice, setRegion] = useState(scope.region);
+    const region = REGIONS.includes(regionChoice) ? regionChoice : "All Regions";
+    const [provinceChoice, setProvince] = useState(scope.province);
+    const [categoryChoice, setSelectedCategories] = useState(scope.categories);
+    const selectedCategories = categoryChoice === null ? CATEGORIES : categoryChoice.filter(category => CATEGORIES.includes(category));
+    const [start, setStart] = useState(scope.start);
+    const [end, setEnd] = useState(scope.end);
 
-/* Fill anything the scope leaves open (null categories = all, empty custom
-   months) using the real options, and drop categories that no longer exist. */
-const withDefaults = (scope, options) => {
-  const next = clone(scope);
-  next.customStart ||= options.months[0] || null;
-  next.customEnd ||= options.months.at(-1) || null;
-  next.categories = (next.categories ?? [...options.categories])
-    .filter(item => options.categories.includes(item));
-  return next;
-};
+    const provinces = useMemo(() => {
+        const geography = data?.scope.geography || [];
+        return ["All Provinces", ...new Set(geography.filter(item => region === "All Regions" || item.region === region).flatMap(item => item.provinces).sort())];
+    }, [region, data]);
+    const province = provinces.includes(provinceChoice) ? provinceChoice : "All Provinces";
 
-const labelFor = (scope, months) => {
-  if (scope.period === "Custom Range") {
-    return `${monthLabel(scope.customStart)} – ${monthLabel(scope.customEnd)}`;
-  }
-  const list = scope.period === "Last 12 Months" ? months?.slice(-12)
-    : scope.period === "Last 24 Months" ? months?.slice(-24)
-    : months;
-  return `${monthLabel(list?.[0])} – ${monthLabel(list?.at(-1))}`;
-};
-
-export default function AnalysisControls({ appliedScope, onApply }) {
-  const [options, setOptions] = useState(null);
-  const [draft, setDraft] = useState(() => clone(appliedScope));
-  const [preview, setPreview] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [previewLoading, setPreviewLoading] = useState(false);
-  const [error, setError] = useState("");
-  const [reloadKey, setReloadKey] = useState(0);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    setLoading(true);
-    setError("");
-    fetchAnalyticsOptions(controller.signal)
-      .then(result => {
-        setOptions(result);
-        setDraft(current => withDefaults(current, result));
-      })
-      .catch(err => { if (err.name !== "AbortError") setError(err.message); })
-      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
-    return () => controller.abort();
-  }, [reloadKey]);
-
-  useEffect(() => {
-    if (!options) return;
-    const controller = new AbortController();
-    const timer = setTimeout(() => {
-      setPreviewLoading(true);
-      fetchDescriptive(draft, controller.signal)
-        .then(setPreview)
-        .catch(err => err.name !== "AbortError" && setPreview(null))
-        .finally(() => setPreviewLoading(false));
-    }, 200);
-    return () => { clearTimeout(timer); controller.abort(); };
-  }, [draft, options]);
-
-  const selectedCategories = draft.categories || [];
-  const provinces = useMemo(() => {
-    if (!options) return [];
-    return draft.region === "All Regions"
-      ? options.provinces
-      : options.provinces.filter(item => item.region === draft.region);
-  }, [options, draft.region]);
-
-  const periodLabel = labelFor(draft, options?.months);
-  const appliedLabel = labelFor(appliedScope, options?.months);
-
-  const validRange = draft.period !== "Custom Range" || Boolean(
-    draft.customStart && draft.customEnd && draft.customStart <= draft.customEnd
-  );
-
-  const signature = scope => {
-    const full = withDefaults(scope, options);
-    const custom = full.period === "Custom Range";
-    return JSON.stringify({
-      period: full.period,
-      returns: full.returns,
-      region: full.region,
-      province: full.province,
-      customStart: custom ? full.customStart : null,
-      customEnd: custom ? full.customEnd : null,
-      categories: [...full.categories].sort()
-    });
-  };
-
-  const isDirty = options ? signature(draft) !== signature(appliedScope) : false;
-
-  /* All categories selected is stored as null ("all"), and custom months are
-     only kept for Custom Range, so the applied scope stays clean. */
-  const buildApplied = () => {
-    const next = clone(draft);
-    if (next.period !== "Custom Range") { next.customStart = null; next.customEnd = null; }
-    if (next.categories && options.categories.every(item => next.categories.includes(item))) {
-      next.categories = null;
+    function toggleCategory(category) {
+        setSelectedCategories(current => {
+            current = current === null ? CATEGORIES : current;
+            if (current.includes(category)) {
+                return current.filter(item => item !== category);
+            }
+            return [...current, category];
+        });
     }
-    return next;
-  };
 
-  const setField = (field, value) => setDraft(current => ({ ...current, [field]: value }));
+    function clearSelections() {
+        setSelectedCategories([]);
+    }
 
-  const setRegion = region => setDraft(current => ({ ...current, region, province: "All Provinces" }));
+    function selectAll() {
+        setSelectedCategories(null);
+    }
 
-  const setProvince = province => setDraft(current => {
-    if (province === "All Provinces") return { ...current, province };
-    const match = options.provinces.find(item => item.name === province);
-    return { ...current, province, region: match?.region || current.region };
-  });
+    function applyControls() {
+        onApply?.({ period, returns, region, province, categories: categoryChoice === null ? null : selectedCategories, start, end });
+        if (setActivePage) {
+            setActivePage("descriptive-analytics");
+        }
+    }
 
-  const toggleCategory = category => setDraft(current => {
-    const currentCategories = current.categories ?? [...options.categories];
-    return {
-      ...current,
-      categories: currentCategories.includes(category)
-        ? currentCategories.filter(item => item !== category)
-        : [...currentCategories, category]
-    };
-  });
+    const periodText = period === "All Available Data"
+        ? dateRange(data?.scope)
+        : period === "Custom Range" ? `${start || "Start date"} – ${end || "End date"}` : period;
+    const validDates = period !== "Custom Range" || (start && end && start <= end);
 
-  const selectAll = () => setField("categories", [...options.categories]);
-  const clearAll = () => setField("categories", []);
-
-  if (loading) return (
-    <div className="af-page"><div className="af-loading-panel">
-      <FaSyncAlt className="af-spin" /><strong>Loading analysis controls…</strong>
-      <span>Reading options from the prepared Master Data.</span>
-    </div></div>
-  );
-
-  if (!options) return (
-    <div className="af-page"><div className="af-loading-panel">
-      <FaExclamationTriangle /><strong>Analysis controls are not available</strong>
-      <span>{error || "The prepared Master Data could not be loaded."}</span>
-      <button type="button" className="af-reset" onClick={() => setReloadKey(k => k + 1)}>Try again</button>
-    </div></div>
-  );
-
-  return (
-    <div className="af-page">
-      <header className="af-header">
-        <div><span className="af-eyebrow">ANALYSIS SCOPE</span><h1>Analysis Controls</h1>
-          <p>Set the scope used by Descriptive Analytics. Changes stay in draft until you apply them.</p></div>
-        <div className="af-applied-card"><small>Currently applied</small>
-          <strong>{appliedLabel}</strong>
-          <span>{appliedScope.region || "All Regions"} → {appliedScope.province || "All Provinces"}</span></div>
-      </header>
-
-      {error && <div className="af-alert error"><FaExclamationTriangle /><span>{error}</span></div>}
-
-      <div className="af-layout">
-        <main className="af-main">
-          <section className="af-card">
-            <SectionHeader icon={<FaCalendarAlt />} tone="blue" title="Analysis Period"
-              text={`Available coverage: ${monthLabel(options.dateMin)} – ${monthLabel(options.dateMax)}.`} />
-            <div className="af-choice-grid four">
-              {PERIOD_PRESETS.map(item => <button type="button" key={item} className={draft.period === item ? "active" : ""} onClick={() => setField("period", item)}>{item}</button>)}
+    return (
+        <div className="rd-page">
+            <div className="rd-header">
+                <div>
+                    <span className="rd-eyebrow">ANALYSIS SCOPE</span>
+                    <h1>Analytics Scope</h1>
+                    <p>Set the same analytical scope before reviewing historical performance, forecasts, and opportunity priorities.</p>
+                </div>
+                <div className="rd-header-note">
+                    <span>Current dataset</span>
+                    <strong>{dateRange(data?.scope)}</strong>
+                    <small>Prepared data from Supabase</small>
+                </div>
             </div>
-            {draft.period === "Custom Range" && <div className="af-field-grid two">
-              <label><span>From</span><select value={draft.customStart || ""} onChange={e => setField("customStart", e.target.value)}>{options.months.map(m => <option key={m}>{m}</option>)}</select></label>
-              <label><span>To</span><select value={draft.customEnd || ""} onChange={e => setField("customEnd", e.target.value)}>{options.months.map(m => <option key={m}>{m}</option>)}</select></label>
-            </div>}
-            <div className={`af-period-summary ${validRange ? "" : "invalid"}`}><span>Selected period</span><strong>{periodLabel}</strong>{!validRange && <small>End month must be on or after start month.</small>}</div>
-          </section>
 
-          <section className="af-card">
-            <SectionHeader icon={<FaUndo />} tone="amber" title="Returns / Refunds"
-              text="Choose how actual return/refund signals are handled in the descriptive scope." />
-            <div className="af-return-grid">
-              {RETURNS_OPTIONS.map(item => <button type="button" key={item} className={draft.returns === item ? "active" : ""} onClick={() => setField("returns", item)}><span>{item}</span>{draft.returns === item && <FaCheckCircle />}</button>)}
+            {loading && <div className="rd-card" role="status">Loading analysis scope…</div>}
+            {error && <div className="rd-card" role="alert">{error} <button onClick={refresh}>Retry</button></div>}
+            {data?.empty && <div className="rd-card" role="status">Run Data Preparation first.</div>}
+            {data && !data.empty && !data.scope.eligibleRecords && <div className="rd-card" role="status">No transactions are eligible for analysis. Review Data Preparation.</div>}
+            <div className="rd-control-layout" aria-busy={loading}>
+                <div className="rd-stack">
+                    <section className="rd-card">
+                        <div className="rd-card-head">
+                            <div className="rd-icon blue"><FaCalendarAlt /></div>
+                            <div>
+                                <h2>Analysis Period</h2>
+                                <p>Choose the historical window used by descriptive and predictive views.</p>
+                            </div>
+                        </div>
+
+                        <div className="rd-option-grid four">
+                            {[
+                                "All Available Data",
+                                "Last 12 Months",
+                                "Last 24 Months",
+                                "Custom Range"
+                            ].map(option => (
+                                <button
+                                    key={option}
+                                    className={`rd-option ${period === option ? "active" : ""}`}
+                                    onClick={() => setPeriod(option)}
+                                >
+                                    {option}
+                                </button>
+                            ))}
+                        </div>
+
+                        {period === "Custom Range" && <div className="rd-field-grid two">
+                            <label className="rd-field"><span>Start date</span><input type="date" value={start} onChange={event => setStart(event.target.value)} /></label>
+                            <label className="rd-field"><span>End date</span><input type="date" value={end} min={start} onChange={event => setEnd(event.target.value)} /></label>
+                        </div>}
+                        {!validDates && <p role="alert">Choose a start date and an end date on or after it.</p>}
+                        <div className="rd-date-summary">
+                            <span>Selected period</span>
+                            <strong>{periodText}</strong>
+                        </div>
+                    </section>
+
+                    <section className="rd-card">
+                        <div className="rd-card-head">
+                            <div className="rd-icon amber"><FaUndo /></div>
+                            <div>
+                                <h2>Returns / Refunds</h2>
+                                <p>Choose whether returned quantities remain visible in the analytical scope.</p>
+                            </div>
+                        </div>
+
+                        <div className="rd-choice-row">
+                            {["Include All", "Exclude Approved Returns", "Returned / Refunded Only"].map(option => (
+                                <button
+                                    key={option}
+                                    className={`rd-choice ${returns === option ? "active" : ""}`}
+                                    onClick={() => setReturns(option)}
+                                >
+                                    <span>{option}</span>
+                                    {returns === option && <FaCheckCircle />}
+                                </button>
+                            ))}
+                        </div>
+
+                        <div className="rd-note">
+                            <FaInfoCircle />
+                            <span>Revenue uses prepared line revenue; quantity uses net quantity. Excluding approved returns removes those lines. Returned / Refunded Only includes approved returns or lines with a positive returned quantity.</span>
+                        </div>
+                    </section>
+
+                    <section className="rd-card">
+                        <div className="rd-card-head">
+                            <div className="rd-icon purple"><FaMapMarkerAlt /></div>
+                            <div>
+                                <h2>Geographic Scope</h2>
+                                <p>Use the project's analytical hierarchy: Region → Province.</p>
+                            </div>
+                        </div>
+
+                        <div className="rd-field-grid two">
+                            <label className="rd-field">
+                                <span>Region</span>
+                                <select value={region} onChange={event => { setRegion(event.target.value); setProvince("All Provinces"); }}>
+                                    {REGIONS.map(item => <option key={item}>{item}</option>)}
+                                </select>
+                            </label>
+
+                            <label className="rd-field">
+                                <span>Province</span>
+                                <select value={province} onChange={event => setProvince(event.target.value)}>
+                                    {provinces.map(item => <option key={item}>{item}</option>)}
+                                </select>
+                            </label>
+                        </div>
+
+                        <div className="rd-scope-pill">
+                            <FaMapMarkerAlt />
+                            <span>{region}{province !== "All Provinces" ? ` • ${province}` : ""}</span>
+                        </div>
+                    </section>
+
+                    <section className="rd-card">
+                        <div className="rd-card-head">
+                            <div className="rd-icon green"><FaBoxOpen /></div>
+                            <div>
+                                <h2>Product Scope</h2>
+                                <p>Use controlled categories for cross-page analysis. Raw product titles remain source detail.</p>
+                            </div>
+                        </div>
+
+                        <div className="rd-selection-tools">
+                            <button onClick={selectAll}>Select all</button>
+                            <button onClick={clearSelections}>Clear</button>
+                            <span>{selectedCategories.length} of {CATEGORIES.length} selected</span>
+                        </div>
+
+                        <div className="rd-category-grid">
+                            {CATEGORIES.map(category => (
+                                <label key={category} className={`rd-check-card ${selectedCategories.includes(category) ? "selected" : ""}`}>
+                                    <input
+                                        type="checkbox"
+                                        checked={selectedCategories.includes(category)}
+                                        onChange={() => toggleCategory(category)}
+                                    />
+                                    <span>{category}</span>
+                                </label>
+                            ))}
+                        </div>
+                    </section>
+                </div>
+
+                <aside className="rd-side-stack">
+                    <section className="rd-card rd-sticky-card">
+                        <div className="rd-card-head compact">
+                            <div className="rd-icon navy"><FaLayerGroup /></div>
+                            <div>
+                                <h2>Active Analysis Scope</h2>
+                                <p>Apply this scope to Descriptive Analytics.</p>
+                            </div>
+                        </div>
+
+                        <div className="rd-summary-list">
+                            <SummaryRow icon={<FaCalendarAlt />} label="Period" value={periodText} />
+                            <SummaryRow icon={<FaUndo />} label="Returns" value={returns} />
+                            <SummaryRow icon={<FaMapMarkerAlt />} label="Geography" value={province !== "All Provinces" ? province : region} />
+                            <SummaryRow icon={<FaBoxOpen />} label="Categories" value={`${selectedCategories.length} selected`} />
+                        </div>
+
+                        <div className="rd-preview-box">
+                            <span>Prepared transaction lines</span>
+                            <strong>{data ? data.scope.preparedRecords.toLocaleString() : "—"}</strong>
+                            <small>before the selected scope is applied</small>
+                        </div>
+
+                        <button className="rd-primary-button" disabled={loading || !!error || !data?.scope.eligibleRecords || !validDates} onClick={applyControls}>
+                            Apply Scope <FaArrowRight />
+                        </button>
+                    </section>
+
+                </aside>
             </div>
-            <div className="af-info"><FaInfoCircle /><span>Only rows marked eligible by ETL are analyzed. Order Status is not a user-facing control. Return/refund treatment uses actual Return / Refund Status and Returned quantity values.</span></div>
-          </section>
-
-          <section className="af-card">
-            <SectionHeader icon={<FaMapMarkerAlt />} tone="purple" title="Geographic Scope"
-              text="Use the prepared Region → Province hierarchy." />
-            <div className="af-field-grid two">
-              <label><span>Region</span><select value={draft.region} onChange={e => setRegion(e.target.value)}><option>All Regions</option>{options.regions.map(region => <option key={region}>{region}</option>)}</select></label>
-              <label><span>Province</span><select value={draft.province} onChange={e => setProvince(e.target.value)}><option>All Provinces</option>{provinces.map(item => <option key={`${item.region}-${item.name}`}>{item.name}</option>)}</select></label>
-            </div>
-            <div className="af-hierarchy-pill"><FaMapMarkerAlt /><strong>{draft.region}</strong><span>→</span><strong>{draft.province}</strong></div>
-          </section>
-
-          <section className="af-card">
-            <SectionHeader icon={<FaBoxOpen />} tone="green" title="Product Scope"
-              text="Use the controlled product categories for analysis." />
-            <div className="af-selection-bar"><div><strong>{selectedCategories.length}</strong> of <strong>{options.categories.length}</strong> categories selected</div><div className="af-selection-actions"><button type="button" onClick={selectAll}>Select all</button><button type="button" onClick={clearAll}>Clear</button></div></div>
-            <div className="af-category-grid">
-              {options.categories.map(category => <label key={category} className={selectedCategories.includes(category) ? "selected" : ""}><input type="checkbox" checked={selectedCategories.includes(category)} onChange={() => toggleCategory(category)} /><span>{category}</span></label>)}
-            </div>
-            {!selectedCategories.length && <div className="af-alert warning"><FaExclamationTriangle /><span>Select at least one category before applying the scope.</span></div>}
-          </section>
-        </main>
-
-        <aside className="af-side">
-          <section className="af-card af-sticky">
-            <SectionHeader icon={<FaLayerGroup />} tone="navy" title="Scope Summary" text="What Descriptive Analytics will use after Apply Scope." />
-            <div className="af-summary-list"><SummaryRow label="Period" value={periodLabel} /><SummaryRow label="Returns" value={draft.returns} /><SummaryRow label="Region" value={draft.region} /><SummaryRow label="Province" value={draft.province} /><SummaryRow label="Categories" value={`${selectedCategories.length} selected`} /></div>
-            <div className="af-preview-box"><div className="af-preview-head"><span>Live preview</span>{previewLoading && <FaSyncAlt className="af-spin" />}</div>{preview ? <><strong>{preview.totals.lineCount.toLocaleString()}</strong><small>eligible transaction lines</small><div className="af-preview-stats"><span>₱{preview.totals.revenue.toLocaleString("en-PH", { maximumFractionDigits: 0 })}</span><span>{preview.totals.orders.toLocaleString()} orders</span></div></> : <small>Preview unavailable until prepared data is ready.</small>}</div>
-            <button type="button" className="af-apply" disabled={!validRange || !selectedCategories.length} onClick={() => onApply(buildApplied())}>Apply Scope <FaArrowRight /></button>
-            {isDirty ? <button type="button" className="af-reset" onClick={() => setDraft(withDefaults(appliedScope, options))}>Reset to applied scope</button> : <div className="af-applied-status"><FaCheckCircle /> Matches current scope</div>}
-          </section>
-
-          <section className="af-card"><h3 className="af-side-title">Scope rules</h3><div className="af-principles"><div><span>01</span><p>Orders = distinct Order IDs.</p></div><div><span>02</span><p>Revenue = prepared transaction-line revenue.</p></div><div><span>03</span><p>Quantity = prepared net quantity.</p></div><div><span>04</span><p>Applied scope drives the descriptive results.</p></div></div></section>
-        </aside>
-      </div>
-    </div>
-  );
+            <section className="rd-handoff">
+                <div>
+                    <strong>Continue to Descriptive Analytics</strong>
+                    <small>Apply this scope to explore historical performance and geographic patterns.</small>
+                </div>
+                <button type="button" disabled={loading || !!error || !data?.scope.eligibleRecords || !validDates} onClick={applyControls}>
+                    View Descriptive Analytics <span aria-hidden="true">→</span>
+                </button>
+            </section>
+        </div>
+    );
 }
 
-function SectionHeader({ icon, tone, title, text }) { return <div className="af-section-head"><span className={`af-icon ${tone}`}>{icon}</span><div><h2>{title}</h2><p>{text}</p></div></div>; }
-function SummaryRow({ label, value }) { return <div className="af-summary-row"><small>{label}</small><strong>{value}</strong></div>; }
+function SummaryRow({ icon, label, value }) {
+    return (
+        <div className="rd-summary-row">
+            <span className="rd-summary-icon">{icon}</span>
+            <div>
+                <small>{label}</small>
+                <strong>{value}</strong>
+            </div>
+        </div>
+    );
+}

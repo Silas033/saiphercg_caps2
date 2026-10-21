@@ -1,617 +1,214 @@
-npm/* ======================================================
-   ANALYTICS SERVICE
-   ------------------------------------------------------
-   Reads the prepared Master Data produced by Data
-   Preparation and answers the two analytics endpoints:
-
-     options()          -> values for Analysis Controls
-     descriptive(scope) -> everything Descriptive Analytics
-                           renders for a given scope
-
-   Business rules (mirrored in the UI copy):
-     - Only rows with is_included_in_analysis = true are used.
-     - Orders   = distinct Order IDs.
-     - Revenue  = sum of prepared line_revenue.
-     - Quantity = sum of prepared net_quantity.
-     - AOV      = Revenue / distinct Orders.
-     - categories: null = every category, [] = none.
-====================================================== */
-
-import fs from "fs";
-import path from "path";
-
-const PREPARED_FILE = "prepared_master_data.json";
-
-const PERIOD_PRESETS = [
-    "All Available Data",
-    "Last 12 Months",
-    "Last 24 Months",
-    "Custom Range"
-];
-
-const RETURNS_OPTIONS = [
-    "Include All",
-    "Exclude Approved Returns",
-    "Returned / Refunded Only"
-];
-
-const ALL_REGIONS = "All Regions";
-const ALL_PROVINCES = "All Provinces";
-
-const MONTH_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
-const MONTH_NAMES = [
-    "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
-];
-
-/* A return/refund request that was cancelled, rejected or
-   withdrawn did not result in a return, so it is not an
-   "actual" return signal. */
-const NOT_A_RETURN = /cancel|reject|declin|withdraw/i;
-
-/* ---------- helpers ---------- */
-
-function httpError(status, message) {
-    const error = new Error(message);
-    error.status = status;
-    return error;
-}
-
-const num = value => {
-    const n = Number(value);
-    return Number.isFinite(n) ? n : 0;
-};
-
-const round2 = value => Math.round(value * 100) / 100;
-
-const monthLabel = ym => {
-    if (!ym) return "—";
-    const [y, m] = ym.split("-").map(Number);
-    return `${MONTH_NAMES[m - 1]} ${y}`;
-};
-
-const peso = value =>
-    `₱${Math.round(value).toLocaleString("en-PH")}`;
-
-const percent = value =>
-    `${(value * 100).toFixed(1)}%`;
-
-const byRevenueThenName = (a, b) =>
-    b.revenue - a.revenue || a.name.localeCompare(b.name);
-
-function hasActualReturn(row) {
-    if (num(row.returned_quantity) > 0) return true;
-    const status = String(row.return_refund_status ?? "").trim();
-    return status !== "" && !NOT_A_RETURN.test(status);
-}
-
-function hasAnyReturnFlag(row) {
-    return (
-        num(row.returned_quantity) > 0 ||
-        String(row.return_refund_status ?? "").trim() !== ""
-    );
-}
-
-/* ---------- service ---------- */
-
-export function createAnalyticsService({ dataDir }) {
-
-    const preparedPath = path.join(dataDir, PREPARED_FILE);
-
-    let cache = null;
-
-    function clearCache() {
-        cache = null;
-    }
-
-    /* Load + normalise the prepared file once. The cache key
-       is the file's mtime + size, so re-running Data
-       Preparation invalidates it automatically even if
-       clearCache() is never called. */
-    function load() {
-
-        if (!fs.existsSync(preparedPath)) {
-            throw httpError(
-                503,
-                "Prepared Master Data was not found. Run Data Preparation first."
-            );
-        }
-
-        const stat = fs.statSync(preparedPath);
-        const key = `${stat.mtimeMs}:${stat.size}`;
-
-        if (cache && cache.key === key) return cache;
-
-        let raw;
-
-        try {
-            raw = JSON.parse(fs.readFileSync(preparedPath, "utf8"));
-        } catch {
-            throw httpError(
-                503,
-                "Prepared Master Data could not be read. Run Data Preparation again."
-            );
-        }
-
-        if (!Array.isArray(raw) || raw.length === 0) {
-            throw httpError(
-                503,
-                "Prepared Master Data is empty. Run Data Preparation first."
-            );
-        }
-
-        const rows = [];
-        const monthSet = new Set();
-        const categorySet = new Set();
-        const regionSet = new Set();
-        const provinceMap = new Map();
-
-        let dateMin = null;
-        let dateMax = null;
-
-        for (const r of raw) {
-
-            if (!r || !r.is_included_in_analysis || !r.year_month) continue;
-
-            const row = {
-                month: r.year_month,
-                date: r.order_creation_date || null,
-                orderId: String(r.order_id),
-                region: r.region || "Unknown",
-                province: r.province || "Unknown",
-                category: r.category || "Other / Unclassified",
-                revenue: num(r.line_revenue),
-                quantity: num(r.net_quantity ?? r.quantity),
-                actualReturn: hasActualReturn(r),
-                anyFlag: hasAnyReturnFlag(r)
-            };
-
-            rows.push(row);
-            monthSet.add(row.month);
-            categorySet.add(row.category);
-            regionSet.add(row.region);
-
-            if (!provinceMap.has(row.province)) {
-                provinceMap.set(row.province, row.region);
-            }
-
-            if (row.date) {
-                if (!dateMin || row.date < dateMin) dateMin = row.date;
-                if (!dateMax || row.date > dateMax) dateMax = row.date;
-            }
-        }
-
-        cache = {
-            key,
-            rows,
-            rowCount: raw.length,
-            includedRowCount: rows.length,
-            months: [...monthSet].sort(),
-            categories: [...categorySet].sort((a, b) => a.localeCompare(b)),
-            regions: [...regionSet].sort((a, b) => a.localeCompare(b)),
-            provinces: [...provinceMap]
-                .map(([name, region]) => ({ name, region }))
-                .sort((a, b) => a.name.localeCompare(b.name)),
-            dateMin,
-            dateMax,
-            generatedAt: stat.mtime.toISOString()
-        };
-
-        return cache;
-    }
-
-    /* ---------- options ---------- */
-
-    function options() {
-
-        const data = load();
-
-        return {
-            success: true,
-            source: PREPARED_FILE,
-            rowCount: data.rowCount,
-            includedRowCount: data.includedRowCount,
-            dateMin: data.dateMin,
-            dateMax: data.dateMax,
-            months: data.months,
-            regions: data.regions,
-            provinces: data.provinces,
-            categories: data.categories
-        };
-    }
-
-    /* ---------- scope handling ---------- */
-
-    function normalizeScope(input) {
-
-        const s = input && typeof input === "object" ? input : {};
-
-        const period = s.period ?? "All Available Data";
-
-        if (!PERIOD_PRESETS.includes(period)) {
-            throw httpError(400, `Unknown analysis period "${period}".`);
-        }
-
-        const returns = s.returns ?? "Include All";
-
-        if (!RETURNS_OPTIONS.includes(returns)) {
-            throw httpError(400, `Unknown returns option "${returns}".`);
-        }
-
-        let customStart = null;
-        let customEnd = null;
-
-        if (period === "Custom Range") {
-
-            customStart = s.customStart;
-            customEnd = s.customEnd;
-
-            if (!MONTH_RE.test(customStart || "") || !MONTH_RE.test(customEnd || "")) {
-                throw httpError(
-                    400,
-                    "Custom Range needs a valid start and end month."
-                );
-            }
-
-            if (customStart > customEnd) {
-                throw httpError(
-                    400,
-                    "End month must be on or after start month."
-                );
-            }
-        }
-
-        return {
-            period,
-            customStart,
-            customEnd,
-            returns,
-            region: s.region || ALL_REGIONS,
-            province: s.province || ALL_PROVINCES,
-            categories: Array.isArray(s.categories)
-                ? [...new Set(s.categories.map(String))]
-                : null
-        };
-    }
-
-    function resolveMonths(scope, allMonths) {
-        switch (scope.period) {
-            case "Last 12 Months":
-                return allMonths.slice(-12);
-            case "Last 24 Months":
-                return allMonths.slice(-24);
-            case "Custom Range":
-                return allMonths.filter(
-                    m => m >= scope.customStart && m <= scope.customEnd
-                );
-            default:
-                return allMonths;
-        }
-    }
-
-    function periodLabel(months) {
-        if (!months.length) return "No data in selected period";
-        if (months.length === 1) return monthLabel(months[0]);
-        return `${monthLabel(months[0])} – ${monthLabel(months.at(-1))}`;
-    }
-
-    /* Everything except the Returns setting. */
-    function filterBase(rows, scope, months) {
-
-        const monthSet = new Set(months);
-        const categorySet = scope.categories ? new Set(scope.categories) : null;
-
-        return rows.filter(row =>
-            monthSet.has(row.month) &&
-            (scope.region === ALL_REGIONS || row.region === scope.region) &&
-            (scope.province === ALL_PROVINCES || row.province === scope.province) &&
-            (!categorySet || categorySet.has(row.category))
-        );
-    }
-
-    function applyReturns(rows, returns) {
-        if (returns === "Exclude Approved Returns") {
-            return rows.filter(row => !row.actualReturn);
-        }
-        if (returns === "Returned / Refunded Only") {
-            return rows.filter(row => row.actualReturn);
-        }
-        return rows;
-    }
-
-    /* ---------- aggregation ---------- */
-
-    function totalsOf(rows) {
-
-        const orders = new Set();
-        let revenue = 0;
-        let quantity = 0;
-
-        for (const row of rows) {
-            orders.add(row.orderId);
-            revenue += row.revenue;
-            quantity += row.quantity;
-        }
-
-        return {
-            revenue: round2(revenue),
-            orders: orders.size,
-            quantity,
-            aov: orders.size ? round2(revenue / orders.size) : 0,
-            lineCount: rows.length
-        };
-    }
-
-    /* Group rows by a key and return revenue/orders/quantity/lines
-       per group, sorted by revenue. */
-    function groupRows(rows, keyOf, extraOf) {
-
-        const groups = new Map();
-
-        for (const row of rows) {
-
-            const key = keyOf(row);
-
-            if (!groups.has(key)) {
-                groups.set(key, {
-                    name: key,
-                    ...(extraOf ? extraOf(row) : {}),
-                    revenue: 0,
-                    quantity: 0,
-                    lineCount: 0,
-                    orderIds: new Set()
-                });
-            }
-
-            const g = groups.get(key);
-            g.revenue += row.revenue;
-            g.quantity += row.quantity;
-            g.lineCount += 1;
-            g.orderIds.add(row.orderId);
-        }
-
-        return [...groups.values()]
-            .map(({ orderIds, ...g }) => ({
-                ...g,
-                revenue: round2(g.revenue),
-                orders: orderIds.size
-            }))
-            .sort(byRevenueThenName);
-    }
-
-    function withShare(list, totalRevenue) {
-        return list.map(item => ({
-            ...item,
-            share: totalRevenue > 0 ? item.revenue / totalRevenue : 0
-        }));
-    }
-
-    function changeVersusPrevious(current, previous) {
-        const delta = (a, b) => (b > 0 ? a / b - 1 : null);
-        return {
-            revenue: delta(current.revenue, previous.revenue),
-            orders: delta(current.orders, previous.orders),
-            quantity: delta(current.quantity, previous.quantity)
-        };
-    }
-
-    function buildInsights({
-        scope, totals, trend, regionRows, provinceRows, categoryRows, returns
-    }) {
-
-        if (!totals.lineCount) {
-            return [{
-                type: "empty",
-                title: "No matching data",
-                text:
-                    "No eligible transaction lines match this scope. " +
-                    "Widen the period, geography, categories or returns setting."
-            }];
-        }
-
-        const insights = [];
-
-        if (scope.region === ALL_REGIONS && regionRows.length) {
-            const r = regionRows[0];
-            insights.push({
-                type: "region",
-                title: `${r.name} leads regional revenue`,
-                text:
-                    `${r.name} generated ${peso(r.revenue)} ` +
-                    `(${percent(r.share)} of scope revenue) from ` +
-                    `${r.orders.toLocaleString()} orders.`
-            });
-        }
-
-        if (scope.province === ALL_PROVINCES && provinceRows.length) {
-            const p = provinceRows[0];
-            insights.push({
-                type: "province",
-                title: `${p.name} is the top province`,
-                text:
-                    `${p.name} (${p.region}) contributed ${peso(p.revenue)}, ` +
-                    `${percent(p.share)} of scope revenue.`
-            });
-
-            if (provinceRows.length > 5) {
-                const topFive = provinceRows
-                    .slice(0, 5)
-                    .reduce((sum, item) => sum + item.revenue, 0);
-
-                insights.push({
-                    type: "concentration",
-                    title: "Revenue is concentrated in a few provinces",
-                    text:
-                        `The top 5 of ${provinceRows.length} provinces account for ` +
-                        `${percent(totals.revenue > 0 ? topFive / totals.revenue : 0)} ` +
-                        `of scope revenue.`
-                });
-            }
-        }
-
-        if (categoryRows.length) {
-            const c = categoryRows[0];
-            insights.push({
-                type: "category",
-                title: `${c.name} is the leading category`,
-                text:
-                    `${c.name} contributed ${peso(c.revenue)} ` +
-                    `(${percent(c.share)} of scope revenue) across ` +
-                    `${c.quantity.toLocaleString()} units.`
-            });
-        }
-
-        if (trend.length > 1) {
-
-            const peak = trend.reduce(
-                (best, item) => (item.revenue > best.revenue ? item : best),
-                trend[0]
-            );
-
-            insights.push({
-                type: "peak",
-                title: `${peak.label} was the strongest month`,
-                text:
-                    `Revenue peaked at ${peso(peak.revenue)} from ` +
-                    `${peak.orders.toLocaleString()} orders.`
-            });
-
-            const last = trend.at(-1);
-            const prev = trend.at(-2);
-
-            if (prev.revenue > 0) {
-                const change = last.revenue / prev.revenue - 1;
-                insights.push({
-                    type: "momentum",
-                    title: `Revenue ${change >= 0 ? "grew" : "declined"} in ${last.label}`,
-                    text:
-                        `${last.label} revenue was ${peso(last.revenue)}, ` +
-                        `${percent(Math.abs(change))} ${change >= 0 ? "above" : "below"} ` +
-                        `${prev.label}.`
-                });
-            }
-        }
-
-        if (returns.returnedLines > 0) {
-            insights.push({
-                type: "returns",
-                title: "Returns / refunds detected",
-                text:
-                    `${returns.returnedLines.toLocaleString()} lines across ` +
-                    `${returns.returnedOrders.toLocaleString()} orders carry an actual ` +
-                    `return/refund signal in this period, geography and category scope.`
-            });
-        }
-
-        return insights;
-    }
-
-    /* ---------- descriptive ---------- */
-
-    function descriptive(input) {
-
-        const data = load();
-        const scope = normalizeScope(input);
-
-        const months = resolveMonths(scope, data.months);
-
-        const baseRows = filterBase(data.rows, scope, months);
-        const rows = applyReturns(baseRows, scope.returns);
-
-        const totals = totalsOf(rows);
-
-        /* Previous period: the same number of months immediately
-           before the current one. Only comparable when a full
-           period of history exists; otherwise null (UI shows the
-           detail text instead of a % change). */
-        let changeVsPrevious = null;
-
-        if (months.length) {
-
-            const start = data.months.indexOf(months[0]);
-            const previousMonths = data.months.slice(
-                Math.max(0, start - months.length),
-                start
-            );
-
-            if (previousMonths.length === months.length) {
-                const previousRows = applyReturns(
-                    filterBase(data.rows, scope, previousMonths),
-                    scope.returns
-                );
-                changeVsPrevious = changeVersusPrevious(
-                    totals,
-                    totalsOf(previousRows)
-                );
-            }
-        }
-
-        const trend = months.map(month => {
-            const t = totalsOf(rows.filter(row => row.month === month));
-            return {
-                month,
-                label: monthLabel(month),
-                revenue: t.revenue,
-                orders: t.orders,
-                quantity: t.quantity
-            };
-        });
-
-        const regionRows = withShare(
-            groupRows(rows, row => row.region),
-            totals.revenue
-        ).map(({ lineCount, ...item }) => item);
-
-        const provinceRows = withShare(
-            groupRows(rows, row => row.province, row => ({ region: row.region })),
-            totals.revenue
-        ).map(({ lineCount, ...item }) => item);
-
-        const categoryRows = withShare(
-            groupRows(rows, row => row.category),
-            totals.revenue
-        );
-
-        /* Return stats describe the period/geo/category scope
-           BEFORE the Returns setting, so "Exclude Approved
-           Returns" still shows how many lines it removed. */
-        const returnedRows = baseRows.filter(row => row.actualReturn);
-        const flaggedRows = baseRows.filter(row => row.anyFlag);
-
-        const returns = {
-            returnedLines: returnedRows.length,
-            returnedOrders: new Set(returnedRows.map(row => row.orderId)).size,
-            flaggedLines: flaggedRows.length,
-            flaggedOrders: new Set(flaggedRows.map(row => row.orderId)).size
-        };
-
-        return {
-            success: true,
-            generatedAt: data.generatedAt,
-            source: PREPARED_FILE,
-            scope,
-            period: {
-                label: periodLabel(months),
-                months,
-                start: months[0] || null,
-                end: months.at(-1) || null
-            },
-            totals,
-            changeVsPrevious,
-            trend,
-            regionRows,
-            provinceRows,
-            categoryRows,
-            returns,
-            insights: buildInsights({
-                scope, totals, trend, regionRows, provinceRows, categoryRows, returns
-            })
-        };
-    }
-
-    return {
-        options,
-        descriptive,
-        clearCache
+// Only the server holds the Supabase secret. Analytics never falls back to local ETL files.
+export const ANALYTICS_COLUMNS = "id,etl_run_id,order_id,order_creation_date,year_month,region,province,category,line_revenue,quantity,net_quantity,returned_quantity,return_refund_status,is_included_in_analysis,is_exact_duplicate";
+
+export async function loadMasterRows(client) {
+    if (!client) throw new Error("Supabase is not configured on the server.");
+    const pageSize = 1000;
+    const concurrentPages = 6;
+    const readPage = async (from, expectedCount = null) => {
+        const { data, error, count } = await client.from("master_transactions")
+            .select(ANALYTICS_COLUMNS, { count: "exact" })
+            .order("id", { ascending: true }).range(from, from + pageSize - 1)
+            .abortSignal(AbortSignal.timeout(15000));
+        if (error) throw new Error(`Unable to load Supabase analytics: ${error.message}`);
+        if (!Array.isArray(data) || count === null) throw new Error("Supabase returned an incomplete analytics response.");
+        if (expectedCount !== null && expectedCount !== count) throw new Error("The dataset changed while loading. Please retry.");
+        return { data, count };
     };
+
+    const first = await readPage(0);
+    const expected = first.count;
+    const rows = [...first.data];
+    for (let offset = pageSize; offset < expected; offset += pageSize * concurrentPages) {
+        const offsets = Array.from(
+            { length: Math.min(concurrentPages, Math.ceil((expected - offset) / pageSize)) },
+            (_, index) => offset + index * pageSize
+        );
+        const pages = await Promise.all(offsets.map(pageOffset => readPage(pageOffset, expected)));
+        pages.forEach(({ data }, index) => {
+            const pageOffset = offsets[index];
+            const expectedLength = Math.min(pageSize, expected - pageOffset);
+            if (data.length !== expectedLength) throw new Error("Supabase analytics row count does not match.");
+            rows.push(...data);
+        });
+    }
+    if (rows.length !== expected) throw new Error("Supabase analytics row count does not match.");
+    if (new Set(rows.map(row => row.id)).size !== rows.length) throw new Error("The dataset changed while paging. Please retry.");
+    return rows;
+}
+
+export function createAnalyticsCache(client, { ttl = 30000, now = Date.now } = {}) {
+    let snapshot = null;
+    let loadedAt = 0;
+    let pending = null;
+    let writing = false;
+    let writeError = null;
+    async function get(force = false) {
+        if (writing) throw new Error("Data Preparation is syncing. Please try again shortly.");
+        if (writeError) throw writeError;
+        if (pending) return pending;
+        if (!force && snapshot && now() - loadedAt < ttl) return snapshot;
+        pending = loadMasterRows(client).then(rows => {
+            loadedAt = now();
+            snapshot = { rows, loadedAt: new Date(loadedAt).toISOString() };
+            return snapshot;
+        }).finally(() => { pending = null; });
+        return pending;
+    }
+    async function sync(write) {
+        if (writing) throw new Error("A Supabase sync is already in progress.");
+        writing = true;
+        try {
+            // Drain an earlier read before replacing the remote dataset.
+            if (pending) await pending.catch(() => {});
+            const result = await write();
+            writeError = null;
+            snapshot = null;
+            writing = false;
+            await get(true);
+            return result;
+        } catch (error) {
+            snapshot = null;
+            writeError = new Error("Supabase sync or verification failed. Run Data Preparation again before using analytics.");
+            throw error;
+        } finally {
+            writing = false;
+        }
+    }
+    return { get, sync };
+}
+
+const clean = value => String(value ?? "").trim();
+const number = value => Number.isFinite(Number(value)) ? Number(value) : 0;
+const eligible = row => row.is_included_in_analysis === true && row.is_exact_duplicate !== true;
+const regionName = row => clean(row.region) || "Unknown Region";
+const provinceName = row => clean(row.province) || "Unknown Province";
+const categoryName = row => clean(row.category) || "Other / Unclassified";
+const monthOf = row => clean(row.year_month) || clean(row.order_creation_date).slice(0, 7);
+const approvedReturn = row => /^(request approved|approved|refunded|returned)$/i.test(clean(row.return_refund_status));
+const hasReturn = row => approvedReturn(row) || number(row.returned_quantity) > 0;
+const sorted = values => [...new Set(values)].sort((a, b) => a.localeCompare(b));
+
+function totals(rows) {
+    return {
+        revenue: Math.round(rows.reduce((sum, row) => sum + number(row.line_revenue), 0) * 100) / 100,
+        orders: new Set(rows.map(row => clean(row.order_id)).filter(Boolean)).size,
+        quantity: rows.reduce((sum, row) => sum + number(row.net_quantity), 0),
+        rows: rows.length
+    };
+}
+
+function group(rows, key) {
+    const groups = new Map();
+    for (const row of rows) {
+        const name = key(row);
+        if (!groups.has(name)) groups.set(name, []);
+        groups.get(name).push(row);
+    }
+    return [...groups].map(([name, items]) => ({ name, ...totals(items), items }));
+}
+
+export function selectAnalyticsRows(masterRows, filters = {}, { summaryOnly = false } = {}) {
+    const rows = masterRows.filter(eligible);
+    let scope;
+    if (summaryOnly) {
+        const needsDateMax = filters.period === "Last 12 Months" || filters.period === "Last 24 Months";
+        scope = { dateMax: needsDateMax ? rows.reduce((max, row) => {
+            const day = clean(row.order_creation_date).slice(0, 10);
+            return day && (!max || day > max) ? day : max;
+        }, null) : null };
+    } else {
+        const dates = sorted(rows.map(row => clean(row.order_creation_date).slice(0, 10)).filter(Boolean));
+        scope = {
+            regions: sorted(rows.map(regionName)),
+            geography: group(rows, regionName).map(region => ({ region: region.name, provinces: sorted(region.items.map(provinceName)) })),
+            categories: sorted(rows.map(categoryName)),
+            dateMin: dates[0] || null, dateMax: dates.at(-1) || null,
+            preparedRecords: masterRows.length, eligibleRecords: rows.length
+        };
+    }
+    let start = filters.start || "";
+    let end = filters.end || "";
+    if (filters.period === "Last 12 Months" || filters.period === "Last 24 Months") {
+        if (scope.dateMax) {
+            const date = new Date(`${scope.dateMax}T00:00:00Z`);
+            date.setUTCDate(1);
+            date.setUTCMonth(date.getUTCMonth() - (filters.period === "Last 12 Months" ? 11 : 23));
+            start = date.toISOString().slice(0, 10);
+            end = scope.dateMax;
+        }
+    } else if (filters.period !== "Custom Range") {
+        start = "";
+        end = "";
+    }
+    if (filters.period === "Custom Range" && (!/^\d{4}-\d{2}-\d{2}$/.test(start) || !/^\d{4}-\d{2}-\d{2}$/.test(end) || start > end)) {
+        throw new Error("Choose a valid start and end date for the custom range.");
+    }
+    const selected = rows.filter(row => {
+        const day = clean(row.order_creation_date).slice(0, 10);
+        return (!start || day >= start) && (!end || day <= end)
+            && (!filters.region || filters.region === "All Regions" || regionName(row) === filters.region)
+            && (!filters.province || filters.province === "All Provinces" || provinceName(row) === filters.province)
+            && (!Array.isArray(filters.categories) || filters.categories.includes(categoryName(row)))
+            && (filters.returns !== "Exclude Approved Returns" || !approvedReturn(row))
+            && (filters.returns !== "Returned / Refunded Only" || hasReturn(row));
+    });
+    return { rows, selected, scope };
+}
+
+export function analyzeRows(masterRows, filters = {}, { summaryOnly = false } = {}) {
+    const { rows, selected, scope } = selectAnalyticsRows(masterRows, filters, { summaryOnly });
+    const summary = totals(selected);
+    if (summaryOnly) {
+        const monthly = new Map();
+        for (const row of selected) {
+            const name = monthOf(row);
+            if (!/^\d{4}-\d{2}$/.test(name)) continue;
+            if (!monthly.has(name)) monthly.set(name, { name, revenue: 0, orders: new Set(), quantity: 0, rows: 0 });
+            const month = monthly.get(name);
+            month.revenue += number(row.line_revenue);
+            const orderId = clean(row.order_id);
+            if (orderId) month.orders.add(orderId);
+            month.quantity += number(row.net_quantity);
+            month.rows += 1;
+        }
+        const names = [...monthly.keys()].sort();
+        const trend = [];
+        if (names.length) {
+            const cursor = new Date(`${names[0]}-01T00:00:00Z`);
+            while (cursor.toISOString().slice(0, 7) <= names.at(-1)) {
+                const name = cursor.toISOString().slice(0, 7);
+                const month = monthly.get(name);
+                trend.push(month ? {
+                    ...month,
+                    revenue: Math.round(month.revenue * 100) / 100,
+                    orders: month.orders.size,
+                    quantity: month.quantity
+                } : { name, revenue: 0, orders: 0, quantity: 0, rows: 0 });
+                cursor.setUTCMonth(cursor.getUTCMonth() + 1);
+            }
+        }
+        return { scope, summary, trend };
+    }
+    const share = value => summary.revenue ? value / summary.revenue * 100 : 0;
+    const categories = items => {
+        const revenue = totals(items).revenue;
+        return group(items, categoryName).map(({ items: ignored, ...category }) => ({ ...category, share: revenue ? category.revenue / revenue * 100 : 0 })).sort((a, b) => b.revenue - a.revenue);
+    };
+    const regions = group(selected, regionName).map(({ items, ...region }) => ({
+        ...region, share: share(region.revenue),
+        provinces: group(items, provinceName).map(({ items: provinceRows, ...province }) => ({ ...province, region: region.name, categories: categories(provinceRows) })).sort((a, b) => b.revenue - a.revenue)
+    })).sort((a, b) => b.revenue - a.revenue);
+    const monthly = new Map(group(selected, monthOf).filter(item => /^\d{4}-\d{2}$/.test(item.name)).map(({ items, ...month }) => [month.name, month]));
+    const months = [...monthly.keys()].sort();
+    const trend = [];
+    if (months.length) {
+        const cursor = new Date(`${months[0]}-01T00:00:00Z`);
+        while (cursor.toISOString().slice(0, 7) <= months.at(-1)) {
+            const name = cursor.toISOString().slice(0, 7);
+            trend.push(monthly.get(name) || { name, revenue: 0, orders: 0, quantity: 0, rows: 0 });
+            cursor.setUTCMonth(cursor.getUTCMonth() + 1);
+        }
+    }
+    return { scope, summary, regions, categories: categories(selected), trend, empty: masterRows.length === 0 };
 }

@@ -9,55 +9,69 @@ import AnalysisControls from "./pages/AnalysisControls";
 import DescriptiveAnalytics from "./pages/DescriptiveAnalytics";
 import PredictiveAnalytics from "./pages/PredictiveAnalytics";
 import PrescriptiveAnalytics from "./pages/PrescriptiveAnalytics";
-
-import { DEFAULT_SCOPE } from "./data/analyticsScope";
+import { DEFAULT_SCOPE } from "./hooks/useAnalytics";
+import { DEFAULT_FORECAST_SETTINGS } from "./data/forecastSettings";
 
 export default function App() {
-
+    const [analysisScope, setAnalysisScope] = useState(DEFAULT_SCOPE);
+    const [forecastSettings, setForecastSettings] = useState(DEFAULT_FORECAST_SETTINGS);
+    const [predictiveSelectionRequest, setPredictiveSelectionRequest] = useState(null);
+    const [prescriptiveReturn, setPrescriptiveReturn] = useState(null);
+    const [prescriptiveReturnRequest, setPrescriptiveReturnRequest] = useState(null);
     const [activePage, setActivePage] =
         useState("data-management");
+    const [visitedAnalyticsPages, setVisitedAnalyticsPages] = useState(() => new Set());
+    const analyticsPages = ["descriptive-analytics", "predictive-analytics", "prescriptive-analytics"];
 
-    /*
-      Shared analysis scope. Analysis Controls edits a local draft and
-      only commits into this state when "Apply Scope" is clicked, so the
-      rest of the app (Descriptive Analytics, for now) always renders the
-      last APPLIED scope rather than whatever is mid-edit on the Controls
-      page.
-    */
-    const [appliedScope, setAppliedScope] =
-        useState(DEFAULT_SCOPE);
-
-    function applyScope(nextScope) {
-        setAppliedScope(nextScope);
-        setActivePage("descriptive-analytics");
+    function navigateToPage(page) {
+        if (analyticsPages.includes(page)) {
+            setVisitedAnalyticsPages(previous => {
+                if (previous.has(page)) return previous;
+                return new Set([...previous, page]);
+            });
+        }
+        setActivePage(page);
     }
 
-    function renderPage() {
+    function openPredictiveForecast({ category, provinceKey, pairKey, region, province }) {
+        const requestId = Date.now();
+        setPredictiveSelectionRequest({ category, provinceKey, requestId });
+        setPrescriptiveReturn({ category, pairKey, region, province });
+        navigateToPage("predictive-analytics");
+    }
 
-        switch (activePage) {
+    function returnToPrescriptiveStrategy() {
+        if (!prescriptiveReturn) return;
+        setPrescriptiveReturnRequest({ ...prescriptiveReturn, requestId: Date.now() });
+        navigateToPage("prescriptive-analytics");
+    }
+
+    function exitPrescriptivePairForecast() {
+        setPredictiveSelectionRequest(null);
+        setPrescriptiveReturn(null);
+    }
+
+    function renderPage(page = activePage) {
+
+        switch (page) {
 
             case "data-management":
                 return <DataManagement />;
 
             case "data-preparation":
-                return <DataPreparation setActivePage={setActivePage} />;
+                return <DataPreparation setActivePage={navigateToPage} />;
 
             case "analysis-controls":
-                return (
-                    <AnalysisControls
-                        appliedScope={appliedScope}
-                        onApply={applyScope}
-                    />
-                );
+                return <AnalysisControls setActivePage={navigateToPage} scope={analysisScope} onApply={setAnalysisScope} />;
 
             case "descriptive-analytics":
-                return <DescriptiveAnalytics scope={appliedScope} />;
+                return <DescriptiveAnalytics scope={analysisScope} active={page === activePage} onViewPredictive={() => navigateToPage("predictive-analytics")} />;
 
             case "predictive-analytics":
-                return <PredictiveAnalytics />;
+                return <PredictiveAnalytics scope={analysisScope} active={page === activePage} forecastSettings={forecastSettings} onForecastSettingsChange={setForecastSettings} selectionRequest={predictiveSelectionRequest} prescriptiveReturn={prescriptiveReturn} onReturnToStrategy={returnToPrescriptiveStrategy} onExitPairForecast={exitPrescriptivePairForecast} onViewPrescriptive={() => navigateToPage("prescriptive-analytics")} />;
 
             case "prescriptive-analytics":
-                return <PrescriptiveAnalytics />;
+                return <PrescriptiveAnalytics scope={analysisScope} active={page === activePage} forecastSettings={forecastSettings} returnRequest={prescriptiveReturnRequest} onViewPredictive={openPredictiveForecast} />;
 
             default:
                 return <DataManagement />;
@@ -72,7 +86,7 @@ export default function App() {
 
             <Sidebar
                 activePage={activePage}
-                setActivePage={setActivePage}
+                setActivePage={navigateToPage}
             />
 
             <main className="dss-main">
@@ -80,8 +94,12 @@ export default function App() {
                 <Topbar />
 
                 <section className="dss-content">
-
-                    {renderPage()}
+                    {analyticsPages.map(page => visitedAnalyticsPages.has(page) && (
+                        <div key={page} hidden={activePage !== page}>
+                            {renderPage(page)}
+                        </div>
+                    ))}
+                    {!analyticsPages.includes(activePage) && renderPage()}
 
                 </section>
 
