@@ -364,12 +364,12 @@ function buildPairForecasts(rows, filters, horizon, target, model, base = analyz
             for (const item of province.categories) {
                 const analysis = scopedAnalysis(rows, filters, {
                     category: item.name,
-                    province: { name: province.name, region: region.region }
+                    province: { name: province.name, region: region.name }
                 });
                 pairForecasts.push({
-                    key: JSON.stringify([region.region, province.name, item.name]),
+                    key: JSON.stringify([region.name, province.name, item.name]),
                     province: province.name,
-                    region: region.region,
+                    region: region.name,
                     category: item.name,
                     ...summarize(analysis, target, horizon, filters, {}, model)
                 });
@@ -389,9 +389,9 @@ export function predictiveAnalytics(rows, filters = {}, horizon = 6, target = 'r
     const base = analyzeRows(rows, effectiveFilters);
     const categories = base.categories.map(item => item.name);
     const provinces = base.regions.flatMap(region => region.provinces.map(province => ({
-        key: pairKey(region.region, province.name),
+        key: pairKey(region.name, province.name),
         name: province.name,
-        region: region.region
+        region: region.name
     })));
     const provinceMap = new Map(provinces.map(province => [province.key, province]));
     let selectedProvince = provinceKey ? provinceMap.get(provinceKey) : null;
@@ -561,12 +561,18 @@ export function prescriptiveAnalytics(rows, filters = {}, horizon = 6, target = 
         const provinceShare = provinceRevenue.get(provinceKey) > 0 ? pair.revenue / provinceRevenue.get(provinceKey) : null;
         const overallShare = totalRevenue > 0 ? (categoryRevenue.get(pair.category) || 0) / totalRevenue : null;
         const affinityRatio = provinceShare != null && overallShare > 0 ? provinceShare / overallShare : null;
-        const growthEvidence = [yoyGrowth, forecast?.growth].filter(value => value != null && Number.isFinite(value));
-        const meanGrowth = growthEvidence.length ? growthEvidence.reduce((sum, value) => sum + value, 0) / growthEvidence.length : 0;
-        const growthMomentum = clampScore(50 + meanGrowth * 2);
+        const usableForecastGrowth = forecast?.status === 'available' ? forecast.growth : null;
+        const growthEvidence = [yoyGrowth, usableForecastGrowth].filter(value => value != null && Number.isFinite(value));
+        const growthEvidenceAvailable = growthEvidence.length > 0;
+        const meanGrowth = growthEvidenceAvailable ? growthEvidence.reduce((sum, value) => sum + value, 0) / growthEvidence.length : null;
+        const growthMomentum = growthEvidenceAvailable ? clampScore(50 + meanGrowth * 2) : null;
         const demandConsistency = months.length ? activeMonths / months.length * 100 : 0;
         const categoryAffinity = affinityRatio == null ? 50 : clampScore(affinityRatio * 50);
-        const eligible = pair.orders.size >= PRESCRIPTIVE_MIN_ORDERS && activeMonths >= PRESCRIPTIVE_MIN_ACTIVE_MONTHS;
+        const insufficientReasons = [];
+        if (pair.orders.size < PRESCRIPTIVE_MIN_ORDERS) insufficientReasons.push(`Fewer than ${PRESCRIPTIVE_MIN_ORDERS} distinct orders.`);
+        if (activeMonths < PRESCRIPTIVE_MIN_ACTIVE_MONTHS) insufficientReasons.push(`Fewer than ${PRESCRIPTIVE_MIN_ACTIVE_MONTHS} active months.`);
+        if (!growthEvidenceAvailable) insufficientReasons.push('No valid year-over-year growth or usable forecast growth is available.');
+        const eligible = insufficientReasons.length === 0;
         return {
             key: JSON.stringify([pair.region, pair.province, pair.category]),
             region: pair.region,
@@ -577,6 +583,7 @@ export function prescriptiveAnalytics(rows, filters = {}, horizon = 6, target = 
             orders: pair.orders.size,
             quantity: pair.quantity,
             yoyGrowth: rounded(yoyGrowth),
+            growthEvidenceAvailable,
             forecastDemand: forecast?.forecastDemand ?? null,
             forecastGrowth: rounded(forecast?.status === 'available' ? forecast.growth : null),
             forecastTrend: forecast?.trend ?? 'Unavailable',
@@ -584,16 +591,19 @@ export function prescriptiveAnalytics(rows, filters = {}, horizon = 6, target = 
             forecastReason: forecast?.reason ?? 'No matching predictive series is available for this combination.',
             forecastModel: forecast?.model ?? null,
             forecastReliability: forecast?.reliability ?? null,
+            forecastMape: rounded(forecast?.validation?.mape ?? null),
+            forecastBacktestMonths: forecast?.validation?.months ?? null,
             activeMonths,
             calendarMonths: months.length,
             categoryShare: rounded(provinceShare == null ? null : provinceShare * 100),
             overallCategoryShare: rounded(overallShare == null ? null : overallShare * 100),
             affinityRatio: rounded(affinityRatio),
             factors: { demandStrength: null, growthMomentum: rounded(growthMomentum), demandConsistency: rounded(demandConsistency), categoryAffinity: rounded(categoryAffinity) },
+            insufficientReasons,
             eligible,
             status: eligible ? 'eligible' : 'insufficient',
             opportunityScore: null,
-            strategy: 'INSUFFICIENT HISTORY'
+            strategy: null
         };
     });
 
@@ -604,10 +614,10 @@ export function prescriptiveAnalytics(rows, filters = {}, horizon = 6, target = 
         const demandStrength = demandRanks.get(pair.key) ?? 50;
         pair.factors.demandStrength = rounded(demandStrength);
         pair.opportunityScore = rounded(demandStrength * 0.35 + pair.factors.growthMomentum * 0.30 + pair.factors.demandConsistency * 0.20 + pair.factors.categoryAffinity * 0.15);
-        if (demandStrength >= 67 && pair.factors.growthMomentum >= 60) pair.strategy = 'PROMOTE / INCREASE FOCUS';
-        else if (demandStrength >= 67 && pair.factors.growthMomentum >= 40) pair.strategy = 'MAINTAIN / DEFEND';
-        else if (demandStrength >= 34 && pair.factors.growthMomentum >= 60) pair.strategy = 'TEST / EXPLORE';
-        else pair.strategy = 'MONITOR / DEPRIORITIZE';
+        if (demandStrength >= 67 && pair.factors.growthMomentum >= 60) pair.strategy = 'EXPAND SELECTIVELY';
+        else if (demandStrength >= 67 && pair.factors.growthMomentum >= 40) pair.strategy = 'SUSTAIN CORE DEMAND';
+        else if (demandStrength >= 34 && pair.factors.growthMomentum >= 60) pair.strategy = 'PILOT AND VALIDATE';
+        else pair.strategy = 'MONITOR / LOWER PRIORITY';
     }
 
     const categories = [...new Set(pairs.map(pair => pair.category))].sort((a, b) => a.localeCompare(b));
