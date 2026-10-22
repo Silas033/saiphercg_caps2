@@ -21,7 +21,7 @@ const API_URL = "http://localhost:4000/api";
 
 const ITEMS_PER_PAGE = 12;
 
-export default function DataManagement() {
+export default function DataManagement({ setActivePage }) {
 
     const fileInputRef = useRef(null);
 
@@ -1079,12 +1079,7 @@ export default function DataManagement() {
 
                 <button
                     className="proceed-button"
-
-                    onClick={() =>
-                        alert(
-                            "Data Preparation will be connected next."
-                        )
-                    }
+                    onClick={() => setActivePage?.("data-preparation")}
                 >
 
                     Proceed to Data Preparation

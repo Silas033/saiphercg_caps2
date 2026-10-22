@@ -56,7 +56,7 @@ export default function App() {
         switch (page) {
 
             case "data-management":
-                return <DataManagement />;
+                return <DataManagement setActivePage={navigateToPage} />;
 
             case "data-preparation":
                 return <DataPreparation setActivePage={navigateToPage} />;
