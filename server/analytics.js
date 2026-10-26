@@ -3,21 +3,36 @@ export const ANALYTICS_COLUMNS = "id,etl_run_id,order_id,order_creation_date,yea
 
 export async function loadMasterRows(client) {
     if (!client) throw new Error("Supabase is not configured on the server.");
-    const rows = [];
-    let expected = null;
-    while (true) {
+    const pageSize = 1000;
+    const concurrentPages = 6;
+    const readPage = async (from, expectedCount = null) => {
         const { data, error, count } = await client.from("master_transactions")
             .select(ANALYTICS_COLUMNS, { count: "exact" })
-            .order("id", { ascending: true }).range(rows.length, rows.length + 999)
+            .order("id", { ascending: true }).range(from, from + pageSize - 1)
             .abortSignal(AbortSignal.timeout(15000));
         if (error) throw new Error(`Unable to load Supabase analytics: ${error.message}`);
         if (!Array.isArray(data) || count === null) throw new Error("Supabase returned an incomplete analytics response.");
-        if (expected !== null && expected !== count) throw new Error("The dataset changed while loading. Please retry.");
-        expected = count;
-        rows.push(...data);
-        if (rows.length === expected) break;
-        if (!data.length || rows.length > expected) throw new Error("Supabase analytics row count does not match.");
+        if (expectedCount !== null && expectedCount !== count) throw new Error("The dataset changed while loading. Please retry.");
+        return { data, count };
+    };
+
+    const first = await readPage(0);
+    const expected = first.count;
+    const rows = [...first.data];
+    for (let offset = pageSize; offset < expected; offset += pageSize * concurrentPages) {
+        const offsets = Array.from(
+            { length: Math.min(concurrentPages, Math.ceil((expected - offset) / pageSize)) },
+            (_, index) => offset + index * pageSize
+        );
+        const pages = await Promise.all(offsets.map(pageOffset => readPage(pageOffset, expected)));
+        pages.forEach(({ data }, index) => {
+            const pageOffset = offsets[index];
+            const expectedLength = Math.min(pageSize, expected - pageOffset);
+            if (data.length !== expectedLength) throw new Error("Supabase analytics row count does not match.");
+            rows.push(...data);
+        });
     }
+    if (rows.length !== expected) throw new Error("Supabase analytics row count does not match.");
     if (new Set(rows.map(row => row.id)).size !== rows.length) throw new Error("The dataset changed while paging. Please retry.");
     return rows;
 }
@@ -31,8 +46,8 @@ export function createAnalyticsCache(client, { ttl = 30000, now = Date.now } = {
     async function get(force = false) {
         if (writing) throw new Error("Data Preparation is syncing. Please try again shortly.");
         if (writeError) throw writeError;
-        if (!force && snapshot && now() - loadedAt < ttl) return snapshot;
         if (pending) return pending;
+        if (!force && snapshot && now() - loadedAt < ttl) return snapshot;
         pending = loadMasterRows(client).then(rows => {
             loadedAt = now();
             snapshot = { rows, loadedAt: new Date(loadedAt).toISOString() };
@@ -93,16 +108,25 @@ function group(rows, key) {
     return [...groups].map(([name, items]) => ({ name, ...totals(items), items }));
 }
 
-export function analyzeRows(masterRows, filters = {}) {
+export function selectAnalyticsRows(masterRows, filters = {}, { summaryOnly = false } = {}) {
     const rows = masterRows.filter(eligible);
-    const dates = sorted(rows.map(row => clean(row.order_creation_date).slice(0, 10)).filter(Boolean));
-    const scope = {
-        regions: sorted(rows.map(regionName)),
-        geography: group(rows, regionName).map(region => ({ region: region.name, provinces: sorted(region.items.map(provinceName)) })),
-        categories: sorted(rows.map(categoryName)),
-        dateMin: dates[0] || null, dateMax: dates.at(-1) || null,
-        preparedRecords: masterRows.length, eligibleRecords: rows.length
-    };
+    let scope;
+    if (summaryOnly) {
+        const needsDateMax = filters.period === "Last 12 Months" || filters.period === "Last 24 Months";
+        scope = { dateMax: needsDateMax ? rows.reduce((max, row) => {
+            const day = clean(row.order_creation_date).slice(0, 10);
+            return day && (!max || day > max) ? day : max;
+        }, null) : null };
+    } else {
+        const dates = sorted(rows.map(row => clean(row.order_creation_date).slice(0, 10)).filter(Boolean));
+        scope = {
+            regions: sorted(rows.map(regionName)),
+            geography: group(rows, regionName).map(region => ({ region: region.name, provinces: sorted(region.items.map(provinceName)) })),
+            categories: sorted(rows.map(categoryName)),
+            dateMin: dates[0] || null, dateMax: dates.at(-1) || null,
+            preparedRecords: masterRows.length, eligibleRecords: rows.length
+        };
+    }
     let start = filters.start || "";
     let end = filters.end || "";
     if (filters.period === "Last 12 Months" || filters.period === "Last 24 Months") {
@@ -129,7 +153,43 @@ export function analyzeRows(masterRows, filters = {}) {
             && (filters.returns !== "Exclude Approved Returns" || !approvedReturn(row))
             && (filters.returns !== "Returned / Refunded Only" || hasReturn(row));
     });
+    return { rows, selected, scope };
+}
+
+export function analyzeRows(masterRows, filters = {}, { summaryOnly = false } = {}) {
+    const { rows, selected, scope } = selectAnalyticsRows(masterRows, filters, { summaryOnly });
     const summary = totals(selected);
+    if (summaryOnly) {
+        const monthly = new Map();
+        for (const row of selected) {
+            const name = monthOf(row);
+            if (!/^\d{4}-\d{2}$/.test(name)) continue;
+            if (!monthly.has(name)) monthly.set(name, { name, revenue: 0, orders: new Set(), quantity: 0, rows: 0 });
+            const month = monthly.get(name);
+            month.revenue += number(row.line_revenue);
+            const orderId = clean(row.order_id);
+            if (orderId) month.orders.add(orderId);
+            month.quantity += number(row.net_quantity);
+            month.rows += 1;
+        }
+        const names = [...monthly.keys()].sort();
+        const trend = [];
+        if (names.length) {
+            const cursor = new Date(`${names[0]}-01T00:00:00Z`);
+            while (cursor.toISOString().slice(0, 7) <= names.at(-1)) {
+                const name = cursor.toISOString().slice(0, 7);
+                const month = monthly.get(name);
+                trend.push(month ? {
+                    ...month,
+                    revenue: Math.round(month.revenue * 100) / 100,
+                    orders: month.orders.size,
+                    quantity: month.quantity
+                } : { name, revenue: 0, orders: 0, quantity: 0, rows: 0 });
+                cursor.setUTCMonth(cursor.getUTCMonth() + 1);
+            }
+        }
+        return { scope, summary, trend };
+    }
     const share = value => summary.revenue ? value / summary.revenue * 100 : 0;
     const categories = items => {
         const revenue = totals(items).revenue;

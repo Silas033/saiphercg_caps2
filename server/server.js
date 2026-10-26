@@ -10,7 +10,7 @@ import crypto from "crypto";
 import { fileURLToPath } from "url";
 import { createClient } from "@supabase/supabase-js";
 import { createAnalyticsCache, analyzeRows } from "./analytics.js";
-import { forecastRows } from "./forecasting.js";
+import { predictiveAnalytics, prescriptiveAnalytics } from "./forecasting.js";
 
 import {
     createPreparationService
@@ -149,6 +149,8 @@ if (
 ====================================================== */
 
 const analyticsCache = createAnalyticsCache(supabase);
+const predictiveResults = new Map();
+const prescriptiveResults = new Map();
 
 app.use(
     cors()
@@ -167,20 +169,66 @@ app.use(
    DATABASE HELPERS
 ====================================================== */
 
-app.get("/api/forecasts", async (req, res) => {
+app.get("/api/prescriptive", async (req, res) => {
     let filters;
-    const horizon = Number(req.query.horizon || 12);
-    const target = req.query.target || 'quantity';
+    const horizon = Number(req.query.horizon || 6);
+    const target = req.query.target || "revenue";
+    const model = req.query.model || "arima";
     try {
         filters = req.query.filters ? JSON.parse(req.query.filters) : {};
-        if (!filters || typeof filters !== 'object' || Array.isArray(filters) || ![6, 12].includes(horizon) || !['quantity', 'orders', 'revenue'].includes(target)) throw new Error();
+        if (!filters || typeof filters !== "object" || Array.isArray(filters) || ![3, 6, 9, 12].includes(horizon) || !["revenue", "orders", "quantity"].includes(target) || !["arima", "prophet", "random_forest"].includes(model)) throw new Error();
         analyzeRows([], filters);
-    } catch { return res.status(400).json({ error: 'Invalid forecast settings or analysis scope.' }); }
+    } catch { return res.status(400).json({ error: "Invalid prescriptive settings or analysis scope." }); }
     try {
-        const snapshot = await analyticsCache.get();
+        const snapshot = await analyticsCache.get(req.query.refresh === "1");
+        res.set("Cache-Control", "no-store");
+        const cacheKey = JSON.stringify([snapshot.loadedAt, filters, horizon, target, model]);
+        let result = prescriptiveResults.get(cacheKey);
+        if (result) {
+            prescriptiveResults.delete(cacheKey);
+            prescriptiveResults.set(cacheKey, result);
+        } else {
+            result = prescriptiveAnalytics(snapshot.rows, filters, horizon, target, model);
+            prescriptiveResults.set(cacheKey, result);
+            while (prescriptiveResults.size > 12) prescriptiveResults.delete(prescriptiveResults.keys().next().value);
+        }
+        res.json({ ...result, loadedAt: snapshot.loadedAt });
+    } catch (error) {
+        const status = /prescriptive|selected category|month horizon|forecast metric|forecasting model/i.test(error.message) ? 400 : 503;
+        res.status(status).json({ error: error.message });
+    }
+});
+
+app.get("/api/forecasts", async (req, res) => {
+    let filters;
+    const horizon = Number(req.query.horizon || 6);
+    const target = req.query.target || "revenue";
+    const model = req.query.model || "arima";
+    const category = req.query.category || "";
+    const provinceKey = req.query.provinceKey || "";
+    try {
+        filters = req.query.filters ? JSON.parse(req.query.filters) : {};
+        if (!filters || typeof filters !== "object" || Array.isArray(filters) || ![3, 6, 9, 12].includes(horizon) || !["revenue", "orders", "quantity"].includes(target) || !["arima", "prophet", "random_forest"].includes(model)) throw new Error();
+        analyzeRows([], filters);
+    } catch { return res.status(400).json({ error: "Invalid forecast settings or analysis scope." }); }
+    try {
+        const snapshot = await analyticsCache.get(req.query.refresh === "1");
         res.set('Cache-Control', 'no-store');
-        res.json({ ...forecastRows(snapshot.rows, filters, horizon, target), source: 'supabase', loadedAt: snapshot.loadedAt });
-    } catch (error) { res.status(503).json({ error: error.message }); }
+        const cacheKey = JSON.stringify([snapshot.loadedAt, filters, horizon, target, category, provinceKey, model]);
+        let result = predictiveResults.get(cacheKey);
+        if (result) {
+            predictiveResults.delete(cacheKey);
+            predictiveResults.set(cacheKey, result);
+        } else {
+            result = predictiveAnalytics(snapshot.rows, filters, horizon, target, category, provinceKey, model);
+            predictiveResults.set(cacheKey, result);
+            while (predictiveResults.size > 8) predictiveResults.delete(predictiveResults.keys().next().value);
+        }
+        res.json({ ...result, source: "supabase", loadedAt: snapshot.loadedAt });
+    } catch (error) {
+        const status = /selected category|selected province|predictive selection|month horizon|forecast metric|forecasting model/i.test(error.message) ? 400 : 503;
+        res.status(status).json({ error: error.message });
+    }
 });
 
 app.get("/api/analytics", async (req, res) => {
@@ -192,7 +240,7 @@ app.get("/api/analytics", async (req, res) => {
         return res.status(400).json({ error: "Invalid analysis scope." });
     }
     try {
-        const snapshot = await analyticsCache.get();
+        const snapshot = await analyticsCache.get(req.query.refresh === "1");
         res.set("Cache-Control", "no-store");
         res.json({ ...analyzeRows(snapshot.rows, filters), loadedAt: snapshot.loadedAt, source: "supabase" });
     } catch (error) {
@@ -1422,7 +1470,10 @@ app.get(
             res.json({
 
                 fields:
-                    preparation.timeFields()
+                    preparation.timeFields(),
+
+                summary:
+                    preparation.timeSummary()
             });
 
         } catch (error) {

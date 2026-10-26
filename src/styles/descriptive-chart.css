@@ -1,0 +1,94 @@
+.descriptive-chart-shell{position:relative;margin-top:8px}
+.descriptive-insights-card{margin-bottom:18px}
+.descriptive-chart-toolbar{display:flex;align-items:flex-end;gap:9px;flex-wrap:wrap;margin:0 0 10px}
+.descriptive-chart-toolbar>label{display:flex;flex-direction:column;gap:4px;color:#718097;font-size:9px}
+.descriptive-chart-toolbar select,.descriptive-chart-toolbar input{height:31px;min-width:100px;padding:0 8px;border:1px solid #d5dfeb;border-radius:7px;background:#fff;color:#2d4567;font-size:10px}
+.descriptive-chart-toolbar input{width:115px}
+.descriptive-chart-control,.descriptive-chart-zoom button{height:31px;padding:0 9px;border:1px solid #d5dfeb;border-radius:7px;background:#fff;color:#315f9e;font-size:9px;font-weight:800;cursor:pointer}
+.descriptive-chart-control:hover:not(:disabled),.descriptive-chart-zoom button:hover:not(:disabled){background:#f2f7ff;border-color:#a9c0e1}
+.descriptive-chart-control:disabled,.descriptive-chart-zoom button:disabled{opacity:.45;cursor:default}
+.descriptive-chart-control.expand{margin-left:auto;background:#edf5ff}
+.descriptive-chart-zoom{display:flex;align-items:center;gap:6px}
+.descriptive-chart-zoom button{width:31px;padding:0;font-size:14px}
+.descriptive-chart-zoom span{min-width:39px;color:#526782;text-align:center;font-size:9px}
+.descriptive-chart-hint{flex-basis:100%;margin:0 0 8px!important;color:#8b6a1b!important;font-size:9px!important}
+.descriptive-chart-scroll{max-width:100%;overflow-x:auto;overflow-y:hidden;scrollbar-width:thin}
+.descriptive-chart-plot{position:relative;min-width:0}
+.descriptive-chart-svg{display:block;height:300px;color:#2c70dd;overflow:visible}
+.descriptive-chart-svg text{fill:#78869a;font-size:10px}
+.descriptive-chart-grid{stroke:#e9eef5;stroke-width:1}
+.descriptive-chart-line{fill:none;stroke:#2c70dd;stroke-width:3;stroke-linejoin:round;stroke-linecap:round}
+.descriptive-chart-point{fill:#fff;stroke:#2c70dd;stroke-width:3;cursor:pointer}
+.descriptive-chart-point:focus{outline:none;stroke:#f3b422;stroke-width:4}
+.descriptive-chart-tooltip{position:absolute;top:8px;right:12px;z-index:2;display:flex;min-width:175px;flex-direction:column;gap:4px;padding:10px 12px;border:1px solid #cbd9eb;border-radius:9px;background:rgba(255,255,255,.97);box-shadow:0 5px 16px rgba(26,48,75,.13);pointer-events:none}
+.descriptive-chart-tooltip strong{color:#315f9e;font-size:9px;text-transform:uppercase}
+.descriptive-chart-tooltip span{color:#718097;font-size:9px}
+.descriptive-chart-tooltip b{color:#203754;font-size:13px}
+.descriptive-chart-caption{margin:8px 0 0!important;color:#718097!important;font-size:9px!important;line-height:1.5}
+.descriptive-chart-shell.expanded{position:fixed;inset:14px;z-index:1200;display:flex;flex-direction:column;overflow:hidden;margin:0;padding:18px;border:1px solid #dce5f0;border-radius:14px;background:#fff;box-shadow:0 20px 60px rgba(14,35,62,.3)}
+.descriptive-chart-shell.expanded .descriptive-chart-scroll{flex:1;min-height:0}
+.descriptive-chart-shell.expanded .descriptive-chart-plot{min-height:100%}
+.descriptive-chart-shell.expanded .descriptive-chart-caption{flex:0 0 auto}
+.descriptive-handoff{display:flex;justify-content:space-between;align-items:center;gap:18px;padding:18px 20px;border-radius:14px;background:linear-gradient(110deg,#10253f,#193b61);color:#fff}
+.descriptive-handoff div{display:flex;flex-direction:column;gap:5px}
+.descriptive-handoff strong{font-size:16px}
+.descriptive-handoff small{color:#d2deec;font-size:10px}
+.descriptive-handoff button{flex:0 0 auto;padding:10px 13px;border:0;border-radius:9px;background:#2b8fe5;color:white;font-size:10px;font-weight:800;cursor:pointer}
+.descriptive-handoff button:hover{background:#1e7ac9}
+.descriptive-footer{display:flex;justify-content:center;padding:14px 0 0}
+@media(max-width:700px){.descriptive-handoff{align-items:stretch;flex-direction:column}.descriptive-handoff button{width:100%}}
+@media(max-width:700px){.descriptive-chart-svg{height:245px}}
+@media(max-width:520px){.descriptive-chart-toolbar{align-items:stretch}.descriptive-chart-toolbar>label{flex:1 1 calc(50% - 8px)}.descriptive-chart-control.expand{margin-left:0}.descriptive-chart-shell.expanded{inset:6px;padding:10px}.descriptive-chart-shell.expanded .descriptive-chart-toolbar{gap:6px}.descriptive-chart-tooltip{right:4px;top:4px;min-width:145px;padding:7px 9px}}
+
+/* Executive Sales Summary Banner */
+.descriptive-executive-banner {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 12px 18px;
+    margin-bottom: 18px;
+    background: #f3f7fd;
+    border: 1px solid #cce0f5;
+    border-left: 4px solid #1a78e5;
+    border-radius: 10px;
+}
+
+.descriptive-banner-badge {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    padding: 6px 10px;
+    background: #176edc;
+    border-radius: 7px;
+    color: #fff;
+    font-size: 7px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    white-space: nowrap;
+}
+
+.descriptive-banner-badge svg {
+    font-size: 13px;
+}
+
+.descriptive-banner-text {
+    flex: 1;
+    min-width: 0;
+}
+
+.descriptive-banner-text strong {
+    display: block;
+    color: #1a385f;
+    font-size: 11px;
+}
+
+.descriptive-banner-text p {
+    margin: 3px 0 0;
+    color: #556a85;
+    font-size: 9px;
+    line-height: 1.45;
+}
+

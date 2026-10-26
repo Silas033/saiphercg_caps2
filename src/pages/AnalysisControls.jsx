@@ -69,28 +69,28 @@ export default function AnalysisControls({ setActivePage, scope = DEFAULT_SCOPE,
             <div className="rd-header">
                 <div>
                     <span className="rd-eyebrow">ANALYSIS SCOPE</span>
-                    <h1>Analysis Controls</h1>
-                    <p>Set the same analytical scope before reviewing historical performance, forecasts, and opportunity priorities.</p>
+                    <h1>Analysis Scope</h1>
+                    <p>Set your date range, return treatment, geographic area, and product categories to filter all analytics reports.</p>
                 </div>
                 <div className="rd-header-note">
-                    <span>Current dataset</span>
+                    <span>Available sales records</span>
                     <strong>{dateRange(data?.scope)}</strong>
-                    <small>Prepared data from Supabase</small>
+                    <small>Prepared sales dataset</small>
                 </div>
             </div>
 
             {loading && <div className="rd-card" role="status">Loading analysis scope…</div>}
             {error && <div className="rd-card" role="alert">{error} <button onClick={refresh}>Retry</button></div>}
-            {data?.empty && <div className="rd-card" role="status">Run Data Preparation first.</div>}
-            {data && !data.empty && !data.scope.eligibleRecords && <div className="rd-card" role="status">No transactions are eligible for analysis. Review Data Preparation.</div>}
+            {data?.empty && <div className="rd-card" role="status">Please upload and prepare sales data first.</div>}
+            {data && !data.empty && !data.scope.eligibleRecords && <div className="rd-card" role="status">No sales records are eligible for analysis. Review Data Preparation.</div>}
             <div className="rd-control-layout" aria-busy={loading}>
                 <div className="rd-stack">
-                    <section className="rd-card">
+                    <section className="rd-card" id="as-period">
                         <div className="rd-card-head">
                             <div className="rd-icon blue"><FaCalendarAlt /></div>
                             <div>
                                 <h2>Analysis Period</h2>
-                                <p>Choose the historical window used by descriptive and predictive views.</p>
+                                <p>Choose the historical date window applied across all reports and forecasts.</p>
                             </div>
                         </div>
 
@@ -122,12 +122,12 @@ export default function AnalysisControls({ setActivePage, scope = DEFAULT_SCOPE,
                         </div>
                     </section>
 
-                    <section className="rd-card">
+                    <section className="rd-card" id="as-returns">
                         <div className="rd-card-head">
                             <div className="rd-icon amber"><FaUndo /></div>
                             <div>
-                                <h2>Returns / Refunds</h2>
-                                <p>Choose whether returned quantities remain visible in the analytical scope.</p>
+                                <h2>Returns & Refunds</h2>
+                                <p>Choose whether returned items and refunded orders are included in sales totals.</p>
                             </div>
                         </div>
 
@@ -146,16 +146,16 @@ export default function AnalysisControls({ setActivePage, scope = DEFAULT_SCOPE,
 
                         <div className="rd-note">
                             <FaInfoCircle />
-                            <span>Revenue uses prepared line revenue; quantity uses net quantity. Excluding approved returns removes those lines. Returned / Refunded Only includes approved returns or lines with a positive returned quantity.</span>
+                            <span>Revenue is calculated from net sales values; item quantities reflect units sold. Excluding approved returns removes refunded items. Selecting 'Returned / Refunded Only' focuses exclusively on return activity.</span>
                         </div>
                     </section>
 
-                    <section className="rd-card">
+                    <section className="rd-card" id="as-geography">
                         <div className="rd-card-head">
                             <div className="rd-icon purple"><FaMapMarkerAlt /></div>
                             <div>
                                 <h2>Geographic Scope</h2>
-                                <p>Use the project's analytical hierarchy: Region → Province.</p>
+                                <p>Filter insights by specific geographic regions or individual provinces.</p>
                             </div>
                         </div>
 
@@ -181,12 +181,12 @@ export default function AnalysisControls({ setActivePage, scope = DEFAULT_SCOPE,
                         </div>
                     </section>
 
-                    <section className="rd-card">
+                    <section className="rd-card" id="as-categories">
                         <div className="rd-card-head">
                             <div className="rd-icon green"><FaBoxOpen /></div>
                             <div>
                                 <h2>Product Scope</h2>
-                                <p>Use controlled categories for cross-page analysis. Raw product titles remain source detail.</p>
+                                <p>Filter by standardized product categories to focus on specific lines of business.</p>
                             </div>
                         </div>
 
@@ -212,12 +212,12 @@ export default function AnalysisControls({ setActivePage, scope = DEFAULT_SCOPE,
                 </div>
 
                 <aside className="rd-side-stack">
-                    <section className="rd-card rd-sticky-card">
+                    <section className="rd-card rd-sticky-card" id="as-summary">
                         <div className="rd-card-head compact">
                             <div className="rd-icon navy"><FaLayerGroup /></div>
                             <div>
-                                <h2>Active Analysis Scope</h2>
-                                <p>Apply this scope to Descriptive Analytics.</p>
+                                <h2>Selected Scope Summary</h2>
+                                <p>Review your active filters before applying them to reports.</p>
                             </div>
                         </div>
 
@@ -229,9 +229,9 @@ export default function AnalysisControls({ setActivePage, scope = DEFAULT_SCOPE,
                         </div>
 
                         <div className="rd-preview-box">
-                            <span>Prepared transaction lines</span>
+                            <span>Total sales records</span>
                             <strong>{data ? data.scope.preparedRecords.toLocaleString() : "—"}</strong>
-                            <small>before the selected scope is applied</small>
+                            <small>available in the current dataset</small>
                         </div>
 
                         <button className="rd-primary-button" disabled={loading || !!error || !data?.scope.eligibleRecords || !validDates} onClick={applyControls}>
@@ -239,17 +239,17 @@ export default function AnalysisControls({ setActivePage, scope = DEFAULT_SCOPE,
                         </button>
                     </section>
 
-                    <section className="rd-card">
-                        <h3 className="rd-small-heading">Scope principles</h3>
-                        <div className="rd-mini-list">
-                            <div><span>01</span><p>Use order-level distinct counting for orders.</p></div>
-                            <div><span>02</span><p>Use quantity and line revenue at transaction-line grain.</p></div>
-                            <div><span>03</span><p>Forecast only levels with enough historical depth.</p></div>
-                            <div><span>04</span><p>Use internal whitespace as an estimate, not external market size.</p></div>
-                        </div>
-                    </section>
                 </aside>
             </div>
+            <section className="rd-handoff">
+                <div>
+                    <strong>Continue to Descriptive Analytics</strong>
+                    <small>Apply your selected filters and review historical sales performance.</small>
+                </div>
+                <button type="button" disabled={loading || !!error || !data?.scope.eligibleRecords || !validDates} onClick={applyControls}>
+                    View Descriptive Analytics <span aria-hidden="true">→</span>
+                </button>
+            </section>
         </div>
     );
 }

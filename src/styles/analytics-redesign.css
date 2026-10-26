@@ -216,3 +216,196 @@
 .forecast-page .forecast-details { margin-top: 16px; font-size: 12px; line-height: 1.65; color: #53627b; }
 .forecast-page .forecast-details summary { cursor: pointer; font-weight: 700; color: #285aa6; }
 .forecast-page .forecast-details p { margin: 10px 0 0; }
+.rd-handoff{display:flex;justify-content:space-between;align-items:center;gap:18px;margin-top:18px;padding:18px 22px;border-radius:14px;background:linear-gradient(110deg,#10253f,#193b61);color:#fff}
+.rd-handoff div{display:flex;flex-direction:column;gap:5px}
+.rd-handoff strong{font-size:16px}
+.rd-handoff small{color:#d2deec;font-size:10px}
+.rd-handoff button{flex:0 0 auto;padding:10px 14px;border:0;border-radius:9px;background:#2b8fe5;color:#fff;font-size:10px;font-weight:800;cursor:pointer}
+.rd-handoff button:hover:not(:disabled){background:#1e7ac9}
+.rd-handoff button:focus-visible{outline:3px solid #9fc0f5;outline-offset:2px}
+.rd-handoff button:disabled{opacity:.55;cursor:not-allowed}
+@media(max-width:700px){.rd-handoff{align-items:stretch;flex-direction:column}.rd-handoff button{width:100%}}
+
+/* ==========================================================================
+   CORPORATE ENTERPRISE LEVEL POLISH
+   Subtle elevations, refined tables, crisp borders, and smooth transitions
+   ========================================================================== */
+
+.rd-card {
+    border: 1px solid #dfe7f3 !important;
+    border-radius: 12px !important;
+    box-shadow: 0 1px 3px rgba(9, 36, 68, 0.04), 0 4px 14px rgba(9, 36, 68, 0.03) !important;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.rd-card:hover {
+    border-color: #d2e0f2 !important;
+}
+
+.rd-kpi {
+    border: 1px solid #dfe7f3 !important;
+    border-radius: 12px !important;
+    box-shadow: 0 1px 3px rgba(9, 36, 68, 0.04), 0 3px 10px rgba(9, 36, 68, 0.03) !important;
+    transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+}
+
+.rd-kpi:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 18px rgba(9, 36, 68, 0.07) !important;
+    border-color: #c4d7f0 !important;
+}
+
+.rd-table th {
+    background: #f7f9fc !important;
+    color: #5d6f8a !important;
+    font-size: 9.5px !important;
+    font-weight: 800 !important;
+    letter-spacing: 0.06em !important;
+    border-bottom: 1px solid #dfe7f3 !important;
+    padding: 10px 12px !important;
+}
+
+.rd-table td {
+    padding: 11px 12px !important;
+    border-bottom: 1px solid #edf1f6 !important;
+    transition: background 0.15s ease;
+}
+
+.rd-table tbody tr:hover td {
+    background: #f6faff !important;
+}
+
+.rd-segmented {
+    background: #f1f4f9 !important;
+    border: 1px solid #e1e8f2 !important;
+    padding: 3px !important;
+    border-radius: 8px !important;
+}
+
+.rd-segmented button {
+    border-radius: 6px !important;
+    font-weight: 600 !important;
+    transition: all 0.15s ease !important;
+}
+
+.rd-segmented button.active {
+    background: #ffffff !important;
+    color: #1769f5 !important;
+    box-shadow: 0 2px 6px rgba(23, 105, 245, 0.12) !important;
+}
+
+.rd-header-note {
+    border: 1px solid #dfe7f3 !important;
+    border-radius: 10px !important;
+    box-shadow: 0 2px 8px rgba(9, 36, 68, 0.03) !important;
+}
+
+/* ======================================================
+   DESCRIPTIVE FACTS GRID (PUNCHY SALES FACTS, NO FLUFF)
+   ====================================================== */
+
+.descriptive-facts-grid {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 12px;
+}
+
+.descriptive-fact-card {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 14px 15px;
+    box-shadow: 0 2px 8px rgba(32, 53, 84, 0.03);
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    overflow: hidden;
+    transition: transform 0.15s ease, border-color 0.15s ease;
+}
+
+.descriptive-fact-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 18px rgba(23, 75, 145, 0.08);
+}
+
+.descriptive-fact-card::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+}
+
+.descriptive-fact-card.amber::before { background: linear-gradient(90deg, #f59e0b, #fbbf24); }
+.descriptive-fact-card.blue::before { background: linear-gradient(90deg, #256be7, #4f8bf9); }
+.descriptive-fact-card.green::before { background: linear-gradient(90deg, #10b981, #34d399); }
+.descriptive-fact-card.indigo::before { background: linear-gradient(90deg, #4f46e5, #818cf8); }
+.descriptive-fact-card.purple::before { background: linear-gradient(90deg, #8b5cf6, #a78bfa); }
+
+.descriptive-fact-kicker {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 9.5px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #64748b;
+    margin-bottom: 6px;
+}
+
+.descriptive-fact-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+}
+
+.descriptive-fact-card.amber .descriptive-fact-icon { color: #d97706; }
+.descriptive-fact-card.blue .descriptive-fact-icon { color: #256be7; }
+.descriptive-fact-card.green .descriptive-fact-icon { color: #059669; }
+.descriptive-fact-card.indigo .descriptive-fact-icon { color: #4f46e5; }
+.descriptive-fact-card.purple .descriptive-fact-icon { color: #7c3aed; }
+
+.descriptive-fact-value {
+    font-size: 17.5px;
+    font-weight: 800;
+    color: #17253e;
+    line-height: 1.2;
+    margin-bottom: 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.descriptive-fact-detail {
+    font-size: 11px;
+    color: #556987;
+    line-height: 1.4;
+    font-weight: 500;
+}
+
+.descriptive-fact-detail strong {
+    color: #152238;
+}
+
+@media (max-width: 1200px) {
+    .descriptive-facts-grid {
+        grid-template-columns: repeat(3, 1fr);
+    }
+}
+
+@media (max-width: 768px) {
+    .descriptive-facts-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (max-width: 500px) {
+    .descriptive-facts-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+

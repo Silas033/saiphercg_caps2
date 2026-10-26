@@ -1,3 +1,29 @@
+/* ==========================================================================
+   GLOBAL CORPORATE DESIGN SYSTEM TOKENS & RESET
+   Preserving brand colors, fonts, and data formatting
+   ========================================================================== */
+
+:root {
+    --brand-navy-dark: #061b35;
+    --brand-navy: #092444;
+    --brand-navy-accent: #112a88;
+    --brand-blue: #1769f5;
+    --brand-blue-hover: #1357cc;
+    --brand-blue-light: #edf4ff;
+    --brand-text: #172b5d;
+    --brand-text-muted: #6b7b97;
+    --brand-bg: #f4f8ff;
+    --brand-bg-alt: #edf5ff;
+    --brand-card-bg: #ffffff;
+    --brand-border: #dfe7f3;
+    --brand-border-subtle: #edf2f8;
+
+    --brand-shadow-xs: 0 1px 2px rgba(9, 36, 68, 0.04);
+    --brand-shadow-sm: 0 1px 3px rgba(9, 36, 68, 0.04), 0 3px 8px rgba(9, 36, 68, 0.03);
+    --brand-shadow-md: 0 4px 14px rgba(9, 36, 68, 0.05), 0 1px 3px rgba(9, 36, 68, 0.03);
+    --brand-shadow-lg: 0 10px 28px rgba(9, 36, 68, 0.08), 0 2px 6px rgba(9, 36, 68, 0.04);
+}
+
 * {
     box-sizing: border-box;
     margin: 0;
@@ -14,53 +40,104 @@ body,
 body {
     font-family:
         Inter,
-        Arial,
+        -apple-system,
+        BlinkMacSystemFont,
+        "Segoe UI",
+        Roboto,
         Helvetica,
+        Arial,
         sans-serif;
-
-    background: #f4f8ff;
-    color: #172b5d;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    background: var(--brand-bg);
+    color: var(--brand-text);
 }
 
 button,
 input,
-select {
+select,
+textarea {
     font-family: inherit;
 }
 
 .app-shell {
     display: flex;
-
     width: 100%;
     height: 100vh;
-
     overflow: hidden;
+    background: var(--brand-bg);
 }
 
 .dss-main {
     flex: 1;
-
     min-width: 0;
-
     display: flex;
     flex-direction: column;
+    height: 100vh;
+    overflow: hidden;
 }
 
 .dss-content {
     flex: 1;
-
     min-height: 0;
-
     overflow-y: auto;
+    scroll-behavior: smooth;
+    padding: 24px 28px 48px;
+    background: linear-gradient(
+        135deg,
+        #f4f8ff 0%,
+        #edf5ff 100%
+    );
+}
 
-    padding: 22px;
+/* Custom Sleek Scrollbar */
+.dss-content::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
 
-    background:
-        linear-gradient(
-            135deg,
-            #f3f8ff,
-            #edf5ff
-        );
+.dss-content::-webkit-scrollbar-track {
+    background: rgba(223, 231, 243, 0.3);
+}
+
+.dss-content::-webkit-scrollbar-thumb {
+    background: #cbd8ec;
+    border-radius: 999px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+}
+
+.dss-content::-webkit-scrollbar-thumb:hover {
+    background: #a8bfde;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+}
+
+/* Section scroll-margin for smooth header offset */
+section[id],
+div[id] {
+    scroll-margin-top: 24px;
+}
+
+/* Section Corporate Focus Glow Animation */
+@keyframes corporateSectionFocus {
+    0% {
+        box-shadow: 0 0 0 3px rgba(23, 105, 245, 0.38), 0 8px 24px rgba(23, 105, 245, 0.12);
+        border-color: #7ca5f5 !important;
+    }
+    60% {
+        box-shadow: 0 0 0 2px rgba(23, 105, 245, 0.18), 0 6px 18px rgba(23, 105, 245, 0.06);
+        border-color: #a4c2fa !important;
+    }
+    100% {
+        box-shadow: var(--brand-shadow-sm);
+        border-color: inherit;
+    }
+}
+
+.section-highlight-active {
+    animation: corporateSectionFocus 1.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
 .placeholder-page {
@@ -68,10 +145,10 @@ select {
 }
 
 .placeholder-page h1 {
-    color: #112a88;
+    color: var(--brand-navy-accent);
     margin-bottom: 8px;
 }
 
 .placeholder-page p {
-    color: #7180a3;
+    color: var(--brand-text-muted);
 }

@@ -1,42 +1,46 @@
 import { useEffect, useState } from "react";
+import { fetchScopedAnalytics, getCachedScopedAnalytics } from "../data/analyticsApi";
 
 export const DEFAULT_SCOPE = {
     period: "All Available Data", returns: "Include All",
     region: "All Regions", province: "All Provinces", categories: null, start: "", end: ""
 };
 
-export function useAnalytics(scope = DEFAULT_SCOPE) {
+export function useAnalytics(scope = DEFAULT_SCOPE, active = true) {
     const key = JSON.stringify(scope);
-    const [state, setState] = useState({ data: null, error: "", loading: true, key: "" });
+    const [state, setState] = useState(() => {
+        const data = getCachedScopedAnalytics(scope);
+        return { data, error: "", loading: !data, key };
+    });
     const [retry, setRetry] = useState(0);
     useEffect(() => {
+        if (!active) return undefined;
         const controller = new AbortController();
+        let refreshRequested = retry > 0;
         let running = false;
         async function load() {
             if (running || controller.signal.aborted) return;
             running = true;
             try {
-                const response = await fetch(`/api/analytics?filters=${encodeURIComponent(key)}`, { signal: controller.signal });
-                if (!response.headers.get("content-type")?.includes("application/json")) {
-                    throw new Error("The analytics API is unavailable. Restart the backend and check the /api connection.");
-                }
-                const result = await response.json();
-                if (!response.ok) throw new Error(result.error || "Unable to load analytics.");
+                const result = await fetchScopedAnalytics(scope, controller.signal, refreshRequested);
+                refreshRequested = false;
                 setState({ data: result, error: "", loading: false, key });
             } catch (error) {
                 if (error.name !== "AbortError") setState({ data: null, error: error.message, loading: false, key });
             } finally { running = false; }
         }
         load();
-        const timer = setInterval(load, 30000);
         window.addEventListener("focus", load);
         return () => {
             controller.abort();
-            clearInterval(timer);
             window.removeEventListener("focus", load);
         };
-    }, [key, retry]);
-    return { ...(state.key === key ? state : { data: null, error: "", loading: true }), refresh: () => setRetry(value => value + 1) };
+    }, [key, retry, active]);
+    const current = state.key === key ? state : (() => {
+        const data = getCachedScopedAnalytics(scope);
+        return { data, error: "", loading: !data, key };
+    })();
+    return { ...current, refresh: () => setRetry(value => value + 1) };
 }
 
 export const money = value => new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP", maximumFractionDigits: 2 }).format(value || 0);

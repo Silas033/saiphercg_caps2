@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { clearAnalyticsMemoryCache, fetchScopedAnalytics } from "../data/analyticsApi";
 
 import {
     FaCheckCircle,
@@ -17,6 +18,7 @@ import {
     FaChevronLeft,
     FaChevronRight,
     FaPlay,
+    FaSyncAlt,
     FaArrowRight
 } from "react-icons/fa";
 
@@ -115,18 +117,52 @@ function formatCoverage(source) {
 }
 
 function Modal({ title, subtitle, children, onClose, wide = false }) {
+    const modalRef = useRef(null);
+
+    useEffect(() => {
+        const previousFocus = document.activeElement;
+        const closeButton = modalRef.current?.querySelector(".icon-button");
+        closeButton?.focus();
+        return () => previousFocus?.focus?.();
+    }, []);
+
     return (
         <div className="prep-modal-backdrop" onMouseDown={onClose}>
             <div
+                ref={modalRef}
                 className={wide ? "prep-modal wide" : "prep-modal"}
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="prep-modal-title"
+                tabIndex={-1}
                 onMouseDown={(event) => event.stopPropagation()}
+                onKeyDown={(event) => {
+                    if (event.key === "Escape") {
+                        event.stopPropagation();
+                        onClose();
+                        return;
+                    }
+                    if (event.key === "Tab") {
+                        const focusable = [...event.currentTarget.querySelectorAll('button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])')];
+                        if (!focusable.length) return;
+                        const first = focusable[0];
+                        const last = focusable[focusable.length - 1];
+                        if (event.shiftKey && document.activeElement === first) {
+                            event.preventDefault();
+                            last.focus();
+                        } else if (!event.shiftKey && document.activeElement === last) {
+                            event.preventDefault();
+                            first.focus();
+                        }
+                    }
+                }}
             >
                 <div className="prep-modal-header">
                     <div>
-                        <h3>{title}</h3>
+                        <h3 id="prep-modal-title">{title}</h3>
                         {subtitle && <p>{subtitle}</p>}
                     </div>
-                    <button className="icon-button" onClick={onClose} aria-label="Close modal">
+                    <button className="icon-button" onClick={onClose} aria-label="Close modal" autoFocus>
                         <FaTimes />
                     </button>
                 </div>
@@ -166,14 +202,18 @@ export default function DataPreparation({ setActivePage }) {
     const [quality, setQuality] = useState({});
     const [products, setProducts] = useState([]);
     const [productSearch, setProductSearch] = useState("");
+    const [productFilter, setProductFilter] = useState("all");
     const [geoMappings, setGeoMappings] = useState([]);
     const [statusReview, setStatusReview] = useState([]);
     const [returnReview, setReturnReview] = useState([]);
     const [duplicates, setDuplicates] = useState([]);
     const [timeFields, setTimeFields] = useState([]);
+    const [timeSummary, setTimeSummary] = useState({ preparedRecords: 0, sourceRecords: 0, needsReview: 0, periods: [] });
     const [preparationState, setPreparationState] = useState(null);
     const [loading, setLoading] = useState(true);
     const [running, setRunning] = useState(false);
+    const [syncing, setSyncing] = useState(false);
+    const [syncMessage, setSyncMessage] = useState("");
     const [error, setError] = useState("");
     const [modal, setModal] = useState(null);
     const [productPage, setProductPage] = useState(1);
@@ -181,6 +221,32 @@ export default function DataPreparation({ setActivePage }) {
     const [duplicateReviewed, setDuplicateReviewed] = useState(false);
     const [statusReviewed, setStatusReviewed] = useState(false);
     const [returnsReviewed, setReturnsReviewed] = useState(false);
+
+    const [geoFilter, setGeoFilter] = useState("all");
+
+    const productSummary = useMemo(() => {
+        const mapped = products.filter(item => item.status === "Mapped");
+        const review = products.filter(item => item.status !== "Mapped");
+        return { mapped, review };
+    }, [products]);
+
+    const geoSummary = useMemo(() => {
+        const mapped = geoMappings.filter(item => item.status === "Mapped");
+        const review = geoMappings.filter(item => item.status !== "Mapped");
+        return { mapped, review };
+    }, [geoMappings]);
+
+    const visibleGeoRows = useMemo(() => {
+        const rows =
+            geoFilter === "mapped" ? geoSummary.mapped :
+            geoFilter === "review" ? geoSummary.review :
+            geoMappings;
+        return [...rows].sort((a, b) =>
+            (a.status === "Mapped") - (b.status === "Mapped") ||
+            String(a.region).localeCompare(String(b.region)) ||
+            String(a.province).localeCompare(String(b.province))
+        );
+    }, [geoMappings, geoSummary, geoFilter]);
 
     async function getJson(endpoint, options = {}) {
         const response = await fetch(`${API_URL}${endpoint}`, options);
@@ -233,6 +299,12 @@ export default function DataPreparation({ setActivePage }) {
             setReturnReview(returnData.records || []);
             setDuplicates(duplicateData.records || []);
             setTimeFields(timeData.fields || []);
+            setTimeSummary(timeData.summary || {
+                preparedRecords: 0,
+                sourceRecords: source.transactionLines || 0,
+                needsReview: q.invalidDateRecords || 0,
+                periods: []
+            });
             setPreparationState(stateData);
         } catch (err) {
             console.error(err);
@@ -249,9 +321,11 @@ export default function DataPreparation({ setActivePage }) {
     async function runPreparation() {
         setRunning(true);
         setError("");
+        setSyncMessage("");
 
         try {
             const result = await getJson("/preparation/run", { method: "POST" });
+            if (result?.supabaseSync?.success) clearAnalyticsMemoryCache();
             setDuplicateReviewed(false);
             setStatusReviewed(false);
             setReturnsReviewed(false);
@@ -266,6 +340,23 @@ export default function DataPreparation({ setActivePage }) {
             setError(err.message);
         } finally {
             setRunning(false);
+        }
+    }
+
+    async function syncDatabase() {
+        setSyncing(true);
+        setError("");
+        setSyncMessage("");
+
+        try {
+            const result = await fetchScopedAnalytics({}, undefined, true);
+            setSyncMessage(
+                `Synced ${formatNumber(result.scope?.preparedRecords)} records from Supabase. No data preparation was run.`
+            );
+        } catch (err) {
+            setError(err.message);
+        } finally {
+            setSyncing(false);
         }
     }
 
@@ -292,11 +383,13 @@ export default function DataPreparation({ setActivePage }) {
 
     const filteredProducts = useMemo(() => {
         const term = productSearch.trim().toLowerCase();
-        if (!term) return products;
-        return products.filter(item =>
-            item.rawProductName?.toLowerCase().includes(term)
-        );
-    }, [products, productSearch]);
+        const rows =
+            productFilter === "mapped" ? productSummary.mapped :
+            productFilter === "review" ? productSummary.review :
+            products;
+        if (!term) return rows;
+        return rows.filter(item => item.rawProductName?.toLowerCase().includes(term));
+    }, [products, productSearch, productFilter, productSummary]);
 
     const productPages = Math.max(1, Math.ceil(filteredProducts.length / PRODUCT_PAGE_SIZE));
     const visibleProducts = filteredProducts.slice(
@@ -306,9 +399,10 @@ export default function DataPreparation({ setActivePage }) {
 
     useEffect(() => {
         setProductPage(1);
-    }, [productSearch]);
+    }, [productSearch, productFilter]);
 
     const datePassed = (quality.invalidDateRecords || 0) === 0;
+    const invalidDateRecords = Number(timeSummary.needsReview ?? quality.invalidDateRecords) || 0;
     const numericPassed =
         (quality.invalidQuantityRecords || 0) === 0 &&
         (quality.invalidReturnQuantityRecords || 0) === 0 &&
@@ -340,6 +434,7 @@ export default function DataPreparation({ setActivePage }) {
     }
 
     function openProductModal() {
+        setProductFilter("all");
         setModal("products");
     }
 
@@ -348,18 +443,24 @@ export default function DataPreparation({ setActivePage }) {
             <div className="prep-page-header">
                 <div>
                     <h1>Data Preparation</h1>
-                    <p>Review and prepare your transaction data for analysis.</p>
+                    <p>Review, clean, and standardize your transaction records for reporting and forecasting.</p>
                 </div>
-                <button className="primary-button" onClick={runPreparation} disabled={running || loading}>
-                    <FaPlay />
-                    {running ? "Preparing Dataset..." : "Run Data Preparation"}
-                </button>
+                <div className="prep-header-actions">
+                    <button className="outline-button" type="button" onClick={syncDatabase} disabled={syncing || running || loading} title="Read the current records from Supabase without running data preparation.">
+                        <FaSyncAlt />
+                        {syncing ? "Syncing Database..." : "Sync Database"}
+                    </button>
+                    <button className="primary-button" type="button" onClick={() => setModal("confirm-preparation")} disabled={running || syncing || loading}>
+                        <FaPlay />
+                        {running ? "Preparing Dataset..." : "Run Data Preparation"}
+                    </button>
+                </div>
             </div>
 
             <div className="prep-workflow">
                 {[
-                    ["Profile", FaDatabase],
-                    ["Review Issues", FaClipboardCheck],
+                    ["Overview", FaDatabase],
+                    ["Quality Checks", FaClipboardCheck],
                     ["Standardize", FaMapMarkedAlt],
                     ["Transform", FaCalculator],
                     ["Validate", FaCheckCircle],
@@ -381,12 +482,20 @@ export default function DataPreparation({ setActivePage }) {
                 </div>
             )}
 
-            <section className="prep-section">
+            {syncMessage && (
+                <div className="prep-alert success-alert" role="status">
+                    <FaCheckCircle />
+                    <span>{syncMessage}</span>
+                    <button onClick={() => setSyncMessage("")}>Dismiss</button>
+                </div>
+            )}
+
+            <section className="prep-section" id="dp-profiling">
                 <div className="section-heading">
                     <div>
                         <span className="section-kicker">01</span>
-                        <h2>Data Profile</h2>
-                        <p>What the imported transaction files actually contain.</p>
+                        <h2>Dataset Overview</h2>
+                        <p>Summary of imported transaction files and sales volume.</p>
                     </div>
                 </div>
 
@@ -426,12 +535,12 @@ export default function DataPreparation({ setActivePage }) {
                 </div>
             </section>
 
-            <section className="prep-section">
+            <section className="prep-section" id="dp-quality">
                 <div className="section-heading">
                     <div>
                         <span className="section-kicker">02</span>
-                        <h2>Data Quality</h2>
-                        <p>Issues are identified before transformations are applied.</p>
+                        <h2>Data Quality Checks</h2>
+                        <p>Automated checks to verify data completeness and clean transaction records.</p>
                     </div>
                 </div>
 
@@ -475,12 +584,12 @@ export default function DataPreparation({ setActivePage }) {
                 </div>
             </section>
 
-            <section className="prep-section">
+            <section className="prep-section" id="dp-transform">
                 <div className="section-heading">
                     <div>
                         <span className="section-kicker">03</span>
-                        <h2>Standardization &amp; Transformation</h2>
-                        <p>Convert raw Shopee fields into consistent analytical fields.</p>
+                        <h2>Data Standardization</h2>
+                        <p>Standardize customer locations, products, and order dates into consistent business categories.</p>
                     </div>
                 </div>
 
@@ -489,35 +598,64 @@ export default function DataPreparation({ setActivePage }) {
                         <div className="transform-card-header">
                             <div className="transform-icon"><FaMapMarkedAlt /></div>
                             <div>
-                                <h3>Geographic Mapping</h3>
-                                <p>Standardize to the analytical hierarchy.</p>
+                                <div className="transform-title-row">
+                                    <h3>Geographic Standardization</h3>
+                                    <button
+                                        type="button"
+                                        className="geo-help-button"
+                                        aria-label="Help for Geographic Mapping"
+                                        aria-haspopup="dialog"
+                                        onClick={() => setModal("geography-help")}
+                                    >
+                                        ?
+                                    </button>
+                                </div>
+                                <p>Group cities and delivery areas into standard regions and provinces.</p>
                             </div>
                         </div>
-                        <div className="mapping-flow">
-                            <span>Source Province</span><b>→</b><strong>Region</strong>
-                            <span>Source City</span><b>→</b><strong>Province</strong>
+                        <div className="geo-stats">
+                            <div className="geo-stat"><strong>{formatNumber(geoMappings.length)}</strong><span>Values detected</span></div>
+                            <div className="geo-stat ok"><strong>{formatNumber(geoSummary.mapped.length)}</strong><span>Mapped</span></div>
+                            <div className={`geo-stat ${geoSummary.review.length ? "warn" : "ok"}`}>
+                                <strong>{formatNumber(geoSummary.review.length)}</strong><span>Unmapped / needs review</span>
+                            </div>
                         </div>
-                        <div className="prepared-label"><FaCheckCircle /> Geographic fields prepared</div>
-                        <button className="outline-button full" onClick={() => setModal("geography")}>View Mapping Rules</button>
+                        <button
+                            className="outline-button full geo-review-btn"
+                            onClick={() => { setGeoFilter("all"); setModal("geography"); }}
+                        >
+                            Review Geographic Standardization
+                        </button>
                     </div>
 
                     <div className="transform-card product-transform">
                         <div className="transform-card-header">
                             <div className="transform-icon"><FaBoxOpen /></div>
                             <div>
-                                <h3>Product Mapping</h3>
-                                <p>Classify raw Shopee listings into the analytical hierarchy.</p>
+                                <div className="transform-title-row">
+                                    <h3>Product Categorization</h3>
+                                    <button
+                                        type="button"
+                                        className="geo-help-button"
+                                        aria-label="Help for Product Mapping"
+                                        aria-haspopup="dialog"
+                                        onClick={() => setModal("product-help")}
+                                    >
+                                        ?
+                                    </button>
+                                </div>
+                                <p>Group individual product listings into standardized packaging categories.</p>
                             </div>
-                            <span className="mini-badge">{products.length} listings</span>
                         </div>
-                        <div className="product-hierarchy-preview">
-                            <span>Raw Product Name</span><b>→</b><span>Category</span><b>→</b><span>Subcategory</span>
+                        <div className="geo-stats">
+                            <div className="geo-stat"><strong>{formatNumber(products.length)}</strong><span>Values detected</span></div>
+                            <div className="geo-stat ok"><strong>{formatNumber(productSummary.mapped.length)}</strong><span>Mapped</span></div>
+                            <div className={`geo-stat ${productSummary.review.length ? "warn" : "ok"}`}>
+                                <strong>{formatNumber(productSummary.review.length)}</strong><span>Unmapped / needs review</span>
+                            </div>
                         </div>
-                        <div className="mapping-note">
-                            Preserve the original Product Name. Uncertain listings remain <strong>Other / Unclassified</strong>.
-                        </div>
-                        <button className="primary-button full" onClick={openProductModal}>
-                            Review Product Mapping
+                        <button className="outline-button full geo-review-btn" onClick={openProductModal}>
+                            Review Product Categorization
                         </button>
                     </div>
 
@@ -525,54 +663,60 @@ export default function DataPreparation({ setActivePage }) {
                         <div className="transform-card-header">
                             <div className="transform-icon"><FaClock /></div>
                             <div>
-                                <h3>Time Fields</h3>
-                                <p>Derived from Order Creation Date for trends and forecasting.</p>
+                                <div className="transform-title-row">
+                                    <h3>Order Date Standardization</h3>
+                                    <button
+                                        type="button"
+                                        className="geo-help-button"
+                                        aria-label="Help for Time Fields"
+                                        aria-haspopup="dialog"
+                                        onClick={() => setModal("time-help")}
+                                    >
+                                        ?
+                                    </button>
+                                </div>
+                                <p>Structure order creation dates into monthly periods for trend tracking and forecasting.</p>
                             </div>
                         </div>
-                        <div className="time-pills">
-                            {timeFields.map(field => <span key={field.field}>{field.field}</span>)}
+                        <div className="geo-stats">
+                            <div className="geo-stat">
+                                <strong>{loading ? "—" : formatNumber(timeSummary.preparedRecords)}</strong>
+                                <span>Records with time fields</span>
+                            </div>
+                            <div className="geo-stat ok">
+                                <strong>{loading ? "—" : formatNumber(timeSummary.periods.length)}</strong>
+                                <span>Detected months mapped</span>
+                            </div>
+                            <div className={`geo-stat ${invalidDateRecords > 0 ? "warn" : "ok"}`}>
+                                <strong>{loading ? "—" : formatNumber(invalidDateRecords)}</strong>
+                                <span>Missing / invalid dates</span>
+                            </div>
                         </div>
-                        <div className="prepared-label"><FaCheckCircle /> Time fields prepared</div>
-                        <button className="outline-button full" onClick={() => setModal("time")}>View Fields</button>
+                        <button className="outline-button full geo-review-btn" onClick={() => setModal("time")} disabled={loading}>
+                            Review Date Standardization
+                        </button>
                     </div>
 
-                    <div className="transform-card">
-                        <div className="transform-card-header">
-                            <div className="transform-icon"><FaCalculator /></div>
-                            <div>
-                                <h3>Analytical Measures</h3>
-                                <p>Respect the transaction-line and order-level grain.</p>
-                            </div>
-                        </div>
-                        <div className="measure-list">
-                            <div><strong>Orders</strong><span>Distinct Order ID</span></div>
-                            <div><strong>Quantity</strong><span>Sum at transaction-line level</span></div>
-                            <div><strong>Financials</strong><span>Line vs. order-level handling</span></div>
-                        </div>
-                        <div className="warning-note">
-                            <FaExclamationTriangle /> Do not sum repeated order-level fields across transaction lines.
-                        </div>
-                    </div>
                 </div>
             </section>
 
-            <section className="prep-section validation-section">
+            <section className="prep-section validation-section" id="dp-validation">
                 <div className="section-heading">
                     <div>
                         <span className="section-kicker">04</span>
-                        <h2>Preparation Validation</h2>
-                        <p>Confirm that the prepared dataset is ready for downstream analysis.</p>
+                        <h2>Readiness Verification</h2>
+                        <p>Confirm that the sales dataset is complete and ready for analysis.</p>
                     </div>
                 </div>
 
                 <div className="validation-layout">
                     <div className="validation-checklist">
                         {[
-                            ["Geographic mapping prepared", validation.geography],
-                            ["Product classification prepared", validation.product],
-                            ["Duplicate handling reviewed", validation.duplicates],
-                            ["Time fields generated", validation.time],
-                            ["Analytical measures prepared", validation.measures]
+                            ["Regions and provinces mapped", validation.geography],
+                            ["Product categories organized", validation.product],
+                            ["Duplicate records reviewed", validation.duplicates],
+                            ["Monthly timelines generated", validation.time],
+                            ["Sales revenue and quantities calculated", validation.measures]
                         ].map(([label, ok]) => (
                             <div className={ok ? "validation-item complete" : "validation-item"} key={label}>
                                 <FaCheckCircle />
@@ -590,8 +734,8 @@ export default function DataPreparation({ setActivePage }) {
                             <h3>{readyForAnalysis ? "DATASET READY FOR ANALYSIS" : "REVIEW REQUIRED"}</h3>
                             <p>
                                 {readyForAnalysis
-                                    ? "The prepared dataset can now be used by the analysis modules."
-                                    : "Review the outstanding preparation items before proceeding."}
+                                    ? "The prepared dataset is verified and ready for analytics reporting."
+                                    : "Review the outstanding data items above before proceeding."}
                             </p>
                         </div>
                         <button
@@ -599,11 +743,30 @@ export default function DataPreparation({ setActivePage }) {
                             disabled={!readyForAnalysis}
                             onClick={() => setActivePage?.("analysis-controls")}
                         >
-                            Proceed to Analysis Controls <FaArrowRight />
+                            Proceed to Analysis Scope <FaArrowRight />
                         </button>
                     </div>
                 </div>
             </section>
+
+            {modal === "confirm-preparation" && (
+                <Modal
+                    title="Confirm Data Preparation"
+                    subtitle="Review this action before the preparation process starts."
+                    onClose={() => setModal(null)}
+                >
+                    <div className="modal-summary info-summary">
+                        <FaDatabase aria-hidden="true" />
+                        This will reprocess the imported transaction files using the current preparation mappings and refresh the prepared dataset used by analytics.
+                    </div>
+                    <div className="modal-actions">
+                        <button className="outline-button" type="button" onClick={() => setModal(null)}>Cancel</button>
+                        <button className="primary-button" type="button" onClick={() => { setModal(null); runPreparation(); }}>
+                            <FaPlay /> Confirm &amp; Run
+                        </button>
+                    </div>
+                </Modal>
+            )}
 
             {modal === "duplicates" && (
                 <Modal
@@ -681,49 +844,242 @@ export default function DataPreparation({ setActivePage }) {
                 </Modal>
             )}
 
+            {modal === "geography-help" && (
+                <Modal
+                    title="Geographic Mapping Guide"
+                    subtitle="How location fields from imported transactions are organized for analytics."
+                    onClose={() => setModal(null)}
+                    wide
+                >
+                    <div className="geo-help-flow">
+                        <div><span>Source Province</span><b aria-hidden="true">→</b><strong>Region</strong></div>
+                        <div><span>Source City</span><b aria-hidden="true">→</b><strong>Province</strong></div>
+                    </div>
+                    <div className="modal-summary info-summary">
+                        <FaMapMarkedAlt aria-hidden="true" />
+                        Imported province and city values are standardized into the Region → Province hierarchy used in geographic reporting and analysis.
+                    </div>
+                </Modal>
+            )}
+
             {modal === "geography" && (
                 <Modal
-                    title="Geographic Mapping Rules"
-                    subtitle="The analytical hierarchy is Region → Province. City/Municipality is not used as an analytical level."
+                    title="Review Geographic Mapping"
+                    subtitle="Overview of the geographic values detected and mapped by the system. Hierarchy: Source Province → Region, Source City → Province."
                     onClose={() => setModal(null)}
+                    wide
                 >
-                    <div className="table-wrap">
+                    <div className="geo-stats">
+                        <div className="geo-stat"><strong>{geoMappings.length}</strong><span>Values detected</span></div>
+                        <div className="geo-stat ok"><strong>{geoSummary.mapped.length}</strong><span>Mapped</span></div>
+                        <div className={`geo-stat ${geoSummary.review.length ? "warn" : ""}`}>
+                            <strong>{geoSummary.review.length}</strong><span>Unmapped / needs review</span>
+                        </div>
+                    </div>
+
+                    {geoSummary.review.length > 0 ? (
+                        <div className="modal-summary warning-summary">
+                            <FaExclamationTriangle /> {geoSummary.review.length} value(s) have a missing source province or city and are held as “Unclassified”.
+                        </div>
+                    ) : (
+                        <div className="modal-summary info-summary">
+                            <FaCheckCircle /> All detected geographic values are mapped.
+                        </div>
+                    )}
+
+                    <div className="geo-filter">
+                        {[["all", "All"], ["mapped", "Mapped"], ["review", "Needs review"]].map(([key, label]) => (
+                            <button
+                                key={key}
+                                className={`outline-button tiny ${geoFilter === key ? "active" : ""}`}
+                                onClick={() => setGeoFilter(key)}
+                            >
+                                {label}
+                            </button>
+                        ))}
+                    </div>
+
+                    <div className="table-wrap geo-table-wrap">
                         <table className="prep-table">
-                            <thead><tr><th>Source Field</th><th>Analytical Level</th><th>Example</th></tr></thead>
+                            <thead>
+                                <tr>
+                                    <th>Source Province</th>
+                                    <th>Source City</th>
+                                    <th>Mapped Region</th>
+                                    <th>Mapped Province</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
                             <tbody>
-                                <tr><td>Province (Shopee)</td><td><strong>Region</strong></td><td>South Luzon → Region</td></tr>
-                                <tr><td>City (Shopee)</td><td><strong>Province</strong></td><td>Cavite → Province</td></tr>
+                                {visibleGeoRows.length === 0 && (
+                                    <tr><td colSpan="5">No values in this view.</td></tr>
+                                )}
+                                {visibleGeoRows.map(row => (
+                                    <tr key={`${row.rawProvince}|${row.rawCity}`}>
+                                        <td>{row.rawProvince || "—"}</td>
+                                        <td>{row.rawCity || "—"}</td>
+                                        <td><strong>{row.region}</strong></td>
+                                        <td><strong>{row.province}</strong></td>
+                                        <td>
+                                            <span className={`mini-badge ${row.status === "Mapped" ? "geo-ok" : "geo-warn"}`}>
+                                                {row.status === "Mapped" ? "Mapped" : "Needs review"}
+                                            </span>
+                                        </td>
+                                    </tr>
+                                ))}
                             </tbody>
                         </table>
                     </div>
+
                     <div className="mapping-rule-note">Known Aurora regional inconsistency is standardized to North Luzon.</div>
                     <div className="modal-actions"><button className="outline-button" onClick={() => setModal(null)}>Close</button></div>
                 </Modal>
             )}
 
+            {modal === "time-help" && (
+                <Modal
+                    title="Time Fields Guide"
+                    subtitle="Source date, standardized format, and generated calendar fields."
+                    onClose={() => setModal(null)}
+                    wide
+                >
+                    <div className="time-help-content">
+                        <div className="time-help-source">
+                            <span>Source</span>
+                            <strong>Order Creation Date</strong>
+                        </div>
+                        <div className="time-help-source">
+                            <span>Standardized format</span>
+                            <strong>YYYY-MM-DD</strong>
+                        </div>
+                        <h4>Generated fields</h4>
+                        <div className="time-help-fields">
+                            {["Year", "Month", "Month Number", "Year-Month", "Quarter"].map(field => <span key={field}>{field}</span>)}
+                        </div>
+                    </div>
+                </Modal>
+            )}
+
             {modal === "time" && (
                 <Modal
-                    title="Time Fields Generated"
-                    subtitle="Derived from Order Creation Date for monthly analysis and forecasting."
+                    title="Review Time Mapping"
+                    subtitle="Order Creation Date is standardized and mapped to calendar fields for every valid prepared record."
                     onClose={() => setModal(null)}
+                    wide
                 >
+                    <div className="geo-stats">
+                        <div className="geo-stat ok">
+                            <strong>{formatNumber(timeSummary.preparedRecords)}</strong>
+                            <span>Prepared records with time fields</span>
+                        </div>
+                        <div className="geo-stat ok">
+                            <strong>{formatNumber(timeSummary.periods.length)}</strong>
+                            <span>Detected months mapped</span>
+                        </div>
+                        <div className={`geo-stat ${invalidDateRecords ? "warn" : "ok"}`}>
+                            <strong>{formatNumber(invalidDateRecords)}</strong>
+                            <span>Source records needing date review</span>
+                        </div>
+                    </div>
+
+                    {invalidDateRecords > 0 ? (
+                        <div className="modal-summary warning-summary">
+                            <FaExclamationTriangle /> {formatNumber(invalidDateRecords)} source record(s) have a missing or invalid Order Creation Date. They cannot be assigned generated time fields.
+                        </div>
+                    ) : (
+                        <div className="modal-summary info-summary">
+                            <FaCheckCircle /> All source records with dates were standardized successfully.
+                        </div>
+                    )}
+
+                    <h4 className="time-modal-heading">Generated field mapping</h4>
                     <div className="table-wrap">
                         <table className="prep-table">
-                            <thead><tr><th>Generated Field</th><th>Format / Example</th></tr></thead>
-                            <tbody>{timeFields.map(field => <tr key={field.field}><td>{field.field}</td><td>{field.format} — {field.example}</td></tr>)}</tbody>
+                            <thead><tr><th>Source</th><th>Generated Field</th><th>Format</th><th>Example</th></tr></thead>
+                            <tbody>{timeFields.map(field => <tr key={field.field}><td>{field.source}</td><td>{field.field}</td><td>{field.format}</td><td>{field.example}</td></tr>)}</tbody>
+                        </table>
+                    </div>
+
+                    <h4 className="time-modal-heading">Detected months already mapped</h4>
+                    <div className="table-wrap geo-table-wrap">
+                        <table className="prep-table">
+                            <thead>
+                                <tr><th>Year-Month</th><th>Month</th><th>Quarter</th><th>Prepared Records</th><th>Status</th></tr>
+                            </thead>
+                            <tbody>
+                                {timeSummary.periods.length === 0 && (
+                                    <tr><td colSpan="5">No valid dated records are available.</td></tr>
+                                )}
+                                {timeSummary.periods.map(period => (
+                                    <tr key={period.yearMonth}>
+                                        <td>{period.yearMonth}</td>
+                                        <td>{period.monthName}</td>
+                                        <td>{period.quarter}</td>
+                                        <td>{formatNumber(period.records)}</td>
+                                        <td><span className="mini-badge geo-ok">Mapped</span></td>
+                                    </tr>
+                                ))}
+                            </tbody>
                         </table>
                     </div>
                     <div className="modal-actions"><button className="outline-button" onClick={() => setModal(null)}>Close</button></div>
                 </Modal>
             )}
 
+            {modal === "product-help" && (
+                <Modal
+                    title="Product Mapping Guide"
+                    subtitle="How raw Shopee product listings are organized for category analysis."
+                    onClose={() => setModal(null)}
+                    wide
+                >
+                    <div className="product-help-hierarchy">
+                        <div><span>Raw Product Name</span><b aria-hidden="true">→</b><strong>Category</strong><b aria-hidden="true">→</b><strong>Subcategory</strong></div>
+                    </div>
+                    <div className="modal-summary info-summary">
+                        <FaBoxOpen aria-hidden="true" />
+                        Preserve the original Product Name. Uncertain listings can remain <strong>Other / Unclassified</strong>.
+                    </div>
+                </Modal>
+            )}
+
             {modal === "products" && (
                 <Modal
-                    title="Product Mapping Configuration"
+                    title="Review Product Mapping"
                     subtitle="Map each raw Shopee Product Name to Category → Subcategory. Uncertain listings may remain Other / Unclassified."
                     onClose={() => { setModal(null); setEditedProduct(null); }}
                     wide
                 >
+                    <div className="geo-stats">
+                        <div className="geo-stat"><strong>{formatNumber(products.length)}</strong><span>Values detected</span></div>
+                        <div className="geo-stat ok"><strong>{formatNumber(productSummary.mapped.length)}</strong><span>Mapped</span></div>
+                        <div className={`geo-stat ${productSummary.review.length ? "warn" : ""}`}>
+                            <strong>{formatNumber(productSummary.review.length)}</strong><span>Unmapped / needs review</span>
+                        </div>
+                    </div>
+
+                    {productSummary.review.length > 0 ? (
+                        <div className="modal-summary warning-summary">
+                            <FaExclamationTriangle /> {formatNumber(productSummary.review.length)} product listing(s) need category or subcategory review.
+                        </div>
+                    ) : (
+                        <div className="modal-summary info-summary">
+                            <FaCheckCircle /> All detected product listings are mapped.
+                        </div>
+                    )}
+
+                    <div className="geo-filter">
+                        {[["all", "All"], ["mapped", "Mapped"], ["review", "Needs review"]].map(([key, label]) => (
+                            <button
+                                key={key}
+                                className={`outline-button tiny ${productFilter === key ? "active" : ""}`}
+                                onClick={() => setProductFilter(key)}
+                            >
+                                {label}
+                            </button>
+                        ))}
+                    </div>
+
                     <div className="product-modal-toolbar">
                         <div className="search-box">
                             <FaSearch />
@@ -736,6 +1092,9 @@ export default function DataPreparation({ setActivePage }) {
                         <table className="prep-table product-table">
                             <thead><tr><th>Raw Product Name (Source)</th><th>Category</th><th>Subcategory</th><th>Status</th><th></th></tr></thead>
                             <tbody>
+                                {visibleProducts.length === 0 && (
+                                    <tr><td colSpan="5">No product listings in this view.</td></tr>
+                                )}
                                 {visibleProducts.map((product, index) => (
                                     <tr key={`${product.rawProductName}-${index}`}>
                                         <td className="raw-product-cell">{product.rawProductName || "Other / Unclassified"}</td>

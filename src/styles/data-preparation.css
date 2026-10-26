@@ -13,6 +13,14 @@
     margin-bottom: 16px;
 }
 
+.prep-header-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
 .prep-page-header h1 {
     font-size: 25px;
     color: #112a88;
@@ -316,6 +324,43 @@
     margin-bottom: 3px;
 }
 
+.transform-title-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.transform-title-row h3 {
+    margin: 0;
+}
+
+.geo-help-button {
+    display: inline-grid;
+    width: 17px;
+    height: 17px;
+    flex: 0 0 17px;
+    place-items: center;
+    padding: 0;
+    border: 1px solid #9bb4d8;
+    border-radius: 50%;
+    background: #f2f7ff;
+    color: #315f9e;
+    font-size: 10px;
+    font-weight: 800;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.geo-help-button:hover {
+    border-color: #1769f5;
+    background: #e7f0ff;
+}
+
+.geo-help-button:focus-visible {
+    outline: 3px solid #9fc0f5;
+    outline-offset: 2px;
+}
+
 .transform-card-header p {
     font-size: 9px;
     color: #7a8bab;
@@ -327,32 +372,46 @@
     color: #667b9f;
 }
 
-.mapping-flow {
+.geo-help-flow {
     display: grid;
-    grid-template-columns: 1fr 20px 1fr;
-    gap: 7px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+    margin-bottom: 14px;
+}
+
+.geo-help-flow > div {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 24px minmax(0, 1fr);
     align-items: center;
-    font-size: 9px;
-    margin-bottom: 12px;
+    gap: 8px;
+    padding: 18px;
+    border: 1px solid #dce6f6;
+    border-radius: 10px;
+    background: #f8faff;
+    color: #526989;
+    font-size: 12px;
 }
 
-.mapping-flow span {
-    color: #7180a3;
-    background: #f7f9fd;
-    padding: 8px;
-    border-radius: 6px;
+.geo-help-flow span,
+.geo-help-flow strong {
+    padding: 11px 12px;
+    border-radius: 7px;
+    background: #edf4ff;
 }
 
-.mapping-flow b {
+.geo-help-flow strong {
+    color: #315b9c;
+}
+
+.geo-help-flow b {
     color: #1769f5;
     text-align: center;
+    font-size: 17px;
 }
 
-.mapping-flow strong {
-    color: #315b9c;
-    background: #edf4ff;
-    padding: 8px;
-    border-radius: 6px;
+@media(max-width:600px) {
+    .geo-help-flow { grid-template-columns: 1fr; }
+    .time-help-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 .prepared-label {
@@ -365,85 +424,102 @@
     margin: 8px 0 10px;
 }
 
-.product-hierarchy-preview {
+.prepared-label.review {
+    color: #a97000;
+}
+
+.product-help-hierarchy {
+    margin: 4px auto 16px;
+}
+
+.product-help-hierarchy > div {
     display: flex;
     align-items: center;
-    gap: 7px;
-    flex-wrap: wrap;
-    font-size: 8px;
-    color: #52698e;
-}
-
-.product-hierarchy-preview span {
-    background: #f7f9fd;
-    border: 1px solid #e4ebf6;
-    padding: 6px 7px;
-    border-radius: 5px;
-}
-
-.product-hierarchy-preview b {
-    color: #1769f5;
-}
-
-.mapping-note {
-    font-size: 8.5px;
-    line-height: 1.45;
-    color: #7180a3;
-    background: #f8fbff;
-    border: 1px solid #e2ebf7;
-    border-radius: 6px;
-    padding: 7px;
-    margin: 10px 0;
-}
-
-.mapping-note strong {
-    color: #52698e;
-}
-
-.time-pills {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-    margin: 14px 0 12px;
-}
-
-.time-pills span {
-    font-size: 8px;
-    background: #f3f7fd;
-    color: #49658f;
-    border: 1px solid #e1e9f5;
-    border-radius: 5px;
-    padding: 6px 7px;
-}
-
-.measure-list {
-    display: flex;
-    flex-direction: column;
-    gap: 7px;
-    margin-bottom: 10px;
-}
-
-.measure-list > div {
-    display: flex;
-    justify-content: space-between;
-    gap: 10px;
+    justify-content: center;
+    gap: 12px;
+    padding: 20px;
+    border: 1px solid #dce6f6;
+    border-radius: 10px;
     background: #f8faff;
-    padding: 7px 8px;
-    border-radius: 6px;
+    color: #52698e;
+    font-size: 12px;
 }
 
-.measure-list strong {
-    font-size: 9px;
+.product-help-hierarchy span,
+.product-help-hierarchy strong {
+    padding: 13px 16px;
+    border: 1px solid #dce6f6;
+    border-radius: 8px;
+    background: #edf4ff;
+}
+
+.product-help-hierarchy strong {
     color: #315b9c;
 }
 
-.measure-list span {
-    font-size: 8px;
-    color: #7a8bab;
-    text-align: right;
+.product-help-hierarchy b {
+    color: #1769f5;
+    font-size: 17px;
 }
 
-.warning-note,
+@media(max-width:600px) {
+    .product-help-hierarchy > div { flex-direction: column; gap: 7px; }
+    .product-help-hierarchy b { transform: rotate(90deg); }
+}
+
+.time-modal-heading {
+    margin: 14px 0 7px;
+    color: #173574;
+    font-size: 11px;
+}
+
+.time-help-content {
+    max-width: 780px;
+    margin: 0 auto;
+}
+
+.time-help-source {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 10px;
+    padding: 14px 16px;
+    border: 1px solid #dce6f6;
+    border-radius: 9px;
+    background: #f8faff;
+    color: #7180a3;
+    font-size: 11px;
+}
+
+.time-help-source strong {
+    color: #315b9c;
+    font-size: 12px;
+}
+
+.time-help-content h4 {
+    margin: 20px 0 9px;
+    color: #173574;
+    font-size: 12px;
+}
+
+.time-help-fields {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 9px;
+}
+
+.time-help-fields span {
+    padding: 14px 10px;
+    border: 1px solid #dce6f6;
+    border-radius: 9px;
+    background: #edf4ff;
+    color: #315b9c;
+    font-size: 11px;
+    font-weight: 700;
+    text-align: center;
+}
+
 .mapping-rule-note,
 .modal-summary {
     display: flex;
@@ -455,7 +531,6 @@
     line-height: 1.45;
 }
 
-.warning-note,
 .warning-summary {
     background: #fff8e8;
     color: #8c650d;
@@ -576,6 +651,25 @@
 }
 
 .error-alert button {
+    border: 0;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+    font-size: 9px;
+    font-weight: 700;
+}
+
+.success-alert {
+    background: #effaf4;
+    color: #24744a;
+    border: 1px solid #ccebd8;
+}
+
+.success-alert span {
+    flex: 1;
+}
+
+.success-alert button {
     border: 0;
     background: transparent;
     color: inherit;
@@ -874,3 +968,94 @@
         grid-template-columns: 1fr;
     }
 }
+
+/* Geographic Mapping review */
+.outline-button.geo-review-btn {
+    margin-top: 4px;
+    border-color: #1769f5;
+    background: #1769f5;
+    color: #fff;
+    font-weight: 700;
+}
+
+.outline-button.geo-review-btn:hover {
+    border-color: #0e58d5;
+    background: #0e58d5;
+    color: #fff;
+}
+
+.geo-stats {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+    margin-bottom: 10px;
+}
+
+.geo-stat {
+    border: 1px solid #dce6f6;
+    border-radius: 8px;
+    padding: 9px 11px;
+    background: #fff;
+}
+
+.geo-stat strong {
+    display: block;
+    font-size: 16px;
+    color: #173574;
+}
+
+.geo-stat span {
+    font-size: 9px;
+    color: #7a8bab;
+}
+
+.geo-stat.ok strong { color: #188754; }
+.geo-stat.warn strong { color: #c77700; }
+
+.geo-filter {
+    display: flex;
+    gap: 6px;
+    margin: 10px 0 8px;
+}
+
+.geo-filter .outline-button.active {
+    background: #edf4ff;
+    border-color: #1769f5;
+    color: #1769f5;
+}
+
+.geo-table-wrap {
+    max-height: 340px;
+    overflow-y: auto;
+}
+
+.mini-badge.geo-ok { background: #e6f6ed; color: #188754; }
+.mini-badge.geo-warn { background: #fff3dc; color: #c77700; }
+
+.modal-summary.warning-summary {
+    background: #fff6e5;
+    color: #9a5b00;
+}
+
+/* Corporate Level Polish */
+.profile-card {
+    border: 1px solid #dfe7f3 !important;
+    border-radius: 12px !important;
+    box-shadow: 0 1px 3px rgba(9, 36, 68, 0.04), 0 3px 10px rgba(9, 36, 68, 0.03) !important;
+    transition: transform 0.18s ease, box-shadow 0.18s ease !important;
+}
+
+.profile-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 18px rgba(9, 36, 68, 0.07) !important;
+    border-color: #c4d7f0 !important;
+}
+
+.quality-card,
+.transform-card,
+.validation-layout {
+    border: 1px solid #dfe7f3 !important;
+    border-radius: 12px !important;
+    box-shadow: 0 1px 3px rgba(9, 36, 68, 0.04), 0 4px 14px rgba(9, 36, 68, 0.03) !important;
+}
+
