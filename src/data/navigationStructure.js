@@ -27,13 +27,7 @@ export const NAVIGATION_STRUCTURE = [
         label: "Executive Overview",
         category: "EXECUTIVE SUITE",
         icon: FaCompass,
-        description: "Visual executive dashboard synthesizing sales performance, demand forecasts, and business action plans",
-        subSections: [
-            { id: "ov-answers", label: "Key Business Answers", icon: FaLightbulb, description: "Direct answers to how sales are doing, future demand, and actions" },
-            { id: "ov-kpis", label: "Sales & Growth Numbers", icon: FaChartBar, description: "Revenue, monthly demand, priority score, and accuracy" },
-            { id: "ov-insights", label: "Market Findings", icon: FaChartLine, description: "Monthly sales momentum, top products, and regional demand" },
-            { id: "ov-health", label: "Data & Store Status", icon: FaDatabase, description: "Cleaned transaction records, date coverage, and store health" }
-        ]
+        description: "Visual executive dashboard synthesizing sales performance, demand forecasts, and business action plans"
     },
     {
         id: "data-management",

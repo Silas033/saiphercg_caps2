@@ -211,13 +211,6 @@ export default function Sidebar({
                     ◢▲◣
                 </div>
 
-                <div className="footer-motto">
-                    From data to opportunities.
-                </div>
-
-                <div className="footer-version">
-                    SAIPHER CG DSS · v1.0.0
-                </div>
             </div>
         </aside>
     );

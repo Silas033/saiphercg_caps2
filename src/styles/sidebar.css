@@ -332,14 +332,6 @@
     letter-spacing: 2px;
 }
 
-.footer-motto {
-    font-size: 10px;
-    color: #9ab3d4;
-    line-height: 1.4;
-}
-
-.footer-version {
-    font-size: 9px;
-    color: #5d7596;
-    letter-spacing: 0.02em;
+.dss-sidebar-footer .mountain-mark {
+    display: none;
 }

@@ -14,7 +14,8 @@ import "../styles/topbar.css";
 export default function Topbar({
     activePage = "overview",
     activeSection = null,
-    scope = null
+    scope = null,
+    onLogout = () => {}
 }) {
     const [profileOpen, setProfileOpen] = useState(false);
     const profileRef = useRef(null);
@@ -126,6 +127,13 @@ export default function Topbar({
 
                             <div className="dropdown-footer">
                                 <span className="dropdown-system-label">SAIPHER CG DSS v1.0.0</span>
+                                <button type="button" className="dropdown-logout" onClick={() => {
+                                    setProfileOpen(false);
+                                    onLogout();
+                                }}>
+                                    <FaSignOutAlt aria-hidden="true" />
+                                    Log out
+                                </button>
                             </div>
                         </div>
                     )}

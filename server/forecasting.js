@@ -1,80 +1,13 @@
-import { analyzeRows, selectAnalyticsRows } from './analytics.js';
+import { analyzeRows, selectAnalyticsRows, datasetBounds, completenessNote, shiftMonth, ORDER_COUNT_NOTE } from './analytics.js';
 
 const mean = xs => xs.reduce((a, b) => a + b, 0) / xs.length;
-const nextMonth = (month, offset) => {
-    const date = new Date(`${month}-01T00:00:00Z`);
-    date.setUTCMonth(date.getUTCMonth() + offset);
-    return date.toISOString().slice(0, 7);
-};
+const nextMonth = shiftMonth;
 
-// Fixed, transparent benchmark methods. Holdout observations never enter fitting.
-function predict(values, count, seasonal) {
-    return Array.from({ length: count }, (_, i) => seasonal ? values[values.length - 12 + i % 12] : mean(values));
-}
-
-export function forecastRows(rows, filters = {}, horizon = 12, target = 'quantity') {
-    if (![6, 12].includes(horizon)) throw new Error('Choose a 6 or 12 month horizon.');
-    if (!['quantity', 'orders', 'revenue'].includes(target)) throw new Error('Invalid forecast target.');
-    const analysis = analyzeRows(rows, filters);
-    const history = analysis.trend.map(m => ({ month: m.name, value: m.rows ? m[target] : null, rows: m.rows }));
-    const missingMonths = history.filter(m => m.value === null).map(m => m.month);
-    const coverage = { start: history[0]?.month ?? null, end: history.at(-1)?.month ?? null, months: history.length, observedMonths: history.length - missingMonths.length, missingMonths, latestAvailableDate: analysis.scope.dateMax };
-    const result = { target, unit: { quantity: 'net units', orders: 'distinct orders', revenue: 'PHP' }[target], filters, horizon, coverage, history, forecast: [], validation: null, status: 'insufficient', messages: [] };
-    if (history.length < 18) result.messages.push('At least 18 consecutive observed months are required: 12 for training and 6 for backtesting.');
-    if (missingMonths.length) result.messages.push('Months without records have unknown demand and are not treated as zero. Load or verify these months before forecasting.');
-    if (filters.period === 'Custom Range' && (filters.start.slice(-2) !== '01' || nextMonth(filters.end.slice(0, 7), 1) + '-01' !== new Date(new Date(`${filters.end}T00:00:00Z`).getTime() + 86400000).toISOString().slice(0, 10))) result.messages.push('Choose complete calendar months for the custom range.');
-    if (history.some(m => m.value !== null && m.value < 0)) result.messages.push('This scope has negative monthly totals. Review returns or choose a different target before demand forecasting.');
-    if (result.messages.length) return result;
-    const values = history.map(m => m.value);
-    const seasonal = values.length >= 36;
-    const holdout = seasonal ? 12 : 6;
-    const train = values.slice(0, -holdout);
-    const actual = values.slice(-holdout);
-    const predicted = predict(train, holdout, seasonal);
-    const errors = actual.map((y, i) => y - predicted[i]);
-    const nonzero = actual.flatMap((y, i) => y !== 0 ? [Math.abs(errors[i] / y) * 100] : []);
-    const baselineMae = mean(actual.map(y => Math.abs(y - train.at(-1))));
-    result.validation = { months: holdout, start: history.at(-holdout).month, end: history.at(-1).month, trainingMonths: train.length, mae: mean(errors.map(Math.abs)), mape: nonzero.length ? mean(nonzero) : null, mapeExcludedMonths: holdout - nonzero.length, baselineMae, points: actual.map((value, i) => ({ month: history[history.length - holdout + i].month, actual: value, predicted: predicted[i] })) };
-    const residuals = seasonal ? values.slice(12).map((y, i) => y - values[i]) : values.map(y => y - mean(values));
-    const variance = residuals.reduce((sum, e) => sum + e * e, 0) / (residuals.length - (seasonal ? 0 : 1));
-    const width = 1.96 * Math.sqrt(variance * (seasonal ? 1 : 1 + 1 / values.length));
-    result.forecast = predict(values, horizon, seasonal).map((value, i) => ({ month: nextMonth(coverage.end, i + 1), value, lower: Math.max(0, value - width), upper: value + width }));
-    result.model = seasonal ? 'Seasonal naive (previous year, same month)' : 'Historical mean';
-    result.status = 'ready';
-    result.projectedChange = values.at(-1) === 0 ? null : (result.forecast.at(-1).value - values.at(-1)) / values.at(-1) * 100;
-    result.messages.push('Approximate 95% prediction intervals assume independent, normally distributed errors; lower bounds are clipped at zero. Coverage is not guaranteed.');
-    result.messages.push('Transaction records do not prove that a month is fully uploaded. Verify the first and last month are complete before relying on results.');
-    if (!seasonal) result.messages.push(`Fewer than 36 months: the mean method does not model seasonality.${horizon === 12 ? ' This 12-month forecast has only a 6-month backtest.' : ''}`);
-    if (result.validation.mae >= baselineMae) result.messages.push('This method did not outperform the last-observation baseline on the holdout period. Use forecasts cautiously.');
-    return result;
-}
 
 const FORECAST_HORIZONS = [3, 6, 9, 12];
 const MINIMUM_HISTORY = 3;
 const meanOf = values => values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
 const pairKey = (region, province) => JSON.stringify([region, province]);
-
-function dampedTrend(values, horizon) {
-    const alpha = 0.45;
-    const beta = 0.2;
-    const damping = 0.85;
-    const initialWindow = Math.min(6, values.length - 1);
-    let level = values[0];
-    let trend = (values[initialWindow] - values[0]) / initialWindow;
-
-    for (let index = 1; index < values.length; index += 1) {
-        const previousLevel = level;
-        const oneStepForecast = level + damping * trend;
-        level = alpha * values[index] + (1 - alpha) * oneStepForecast;
-        trend = beta * (level - previousLevel) + (1 - beta) * damping * trend;
-    }
-
-    return Array.from({ length: horizon }, (_, index) => {
-        const step = index + 1;
-        const dampedSteps = damping * (1 - damping ** step) / (1 - damping);
-        return Math.max(0, level + trend * dampedSteps);
-    });
-}
 
 const MODEL_NAMES = { arima: 'ARIMA(1,1,1)', prophet: 'Prophet-style trend and yearly seasonality', random_forest: 'Random Forest Regression' };
 
@@ -109,25 +42,51 @@ function regress(features, labels, ridge = 1e-6) {
     return solveLinear(matrix, vector);
 }
 
+// ARIMA(1,1,1) without drift, estimated by conditional sum of squares on the
+// first differences: z[t] = phi*z[t-1] + e[t] + theta*e[t-1]. phi and theta are
+// found by a bounded grid search followed by a local refinement, so the fit is
+// deterministic and does not depend on any hard-coded MA coefficient.
+const ARIMA_MIN_DIFFERENCES = 6;
+function arimaResiduals(differences, phi, theta) {
+    const residuals = [0];
+    for (let index = 1; index < differences.length; index += 1) {
+        residuals.push(differences[index] - phi * differences[index - 1] - theta * residuals[index - 1]);
+    }
+    return residuals;
+}
+function arimaFit(differences) {
+    const sse = (phi, theta) => arimaResiduals(differences, phi, theta).reduce((sum, e) => sum + e * e, 0);
+    let best = { phi: 0, theta: 0, score: sse(0, 0) };
+    const search = (center, radius, step) => {
+        for (let phi = Math.max(-0.95, center.phi - radius); phi <= Math.min(0.95, center.phi + radius) + 1e-9; phi += step) {
+            for (let theta = Math.max(-0.95, center.theta - radius); theta <= Math.min(0.95, center.theta + radius) + 1e-9; theta += step) {
+                const score = sse(phi, theta);
+                if (score < best.score - 1e-9) best = { phi, theta, score };
+            }
+        }
+    };
+    search({ phi: 0, theta: 0 }, 0.95, 0.05);
+    search(best, 0.05, 0.005);
+    return best;
+}
+
 function arimaForecast(values, horizon) {
-    if (values.length < 3) return dampedTrend(values, horizon);
     const differences = values.slice(1).map((value, index) => value - values[index]);
-    const meanDifference = mean(differences);
-    const centered = differences.map(value => value - meanDifference);
-    const denominator = centered.slice(0, -1).reduce((sum, value) => sum + value * value, 0);
-    const phi = denominator ? Math.max(-0.95, Math.min(0.95, centered.slice(1).reduce((sum, value, index) => sum + value * centered[index], 0) / denominator)) : 0;
-    let residuals = [0];
-    for (let index = 1; index < centered.length; index += 1) residuals[index] = centered[index] - phi * centered[index - 1] - 0.2 * residuals[index - 1];
-    const residualDenominator = residuals.slice(0, -1).reduce((sum, value) => sum + value * value, 0);
-    const theta = residualDenominator ? Math.max(-0.8, Math.min(0.8, residuals.slice(1).reduce((sum, value, index) => sum + value * residuals[index], 0) / residualDenominator)) : 0;
-    let differenceForecast = meanDifference + phi * (differences.at(-1) - meanDifference) + theta * residuals.at(-1);
+    const estimated = differences.length >= ARIMA_MIN_DIFFERENCES;
+    const { phi, theta } = estimated ? arimaFit(differences) : { phi: 0, theta: 0 };
+    const residuals = arimaResiduals(differences, phi, theta);
+    let step = phi * differences.at(-1) + theta * residuals.at(-1);
     let level = values.at(-1);
     const forecasts = [];
     for (let index = 0; index < horizon; index += 1) {
-        level = Math.max(0, level + differenceForecast);
+        level = Math.max(0, level + step);
         forecasts.push(level);
-        differenceForecast = meanDifference + phi * (differenceForecast - meanDifference);
+        step = phi * step;
     }
+    forecasts.label = estimated
+        ? 'ARIMA(1,1,1)'
+        : 'ARIMA(0,1,0) random walk (too few months to estimate the AR and MA terms)';
+    forecasts.parameters = { phi, theta, estimated };
     return forecasts;
 }
 
@@ -206,19 +165,70 @@ function customRangeIsComplete(filters) {
     return filters.period !== 'Custom Range' || (filters.start?.slice(-2) === '01' && monthIsLastDay(filters.end));
 }
 
-function toSeries(analysis, target) {
-    return analysis.trend.map(month => ({
-        month: month.name,
-        value: month.rows ? month[target] : null,
-        rows: month.rows
-    }));
+// Part-months are removed, and the series is extended to the anchor month
+// (the dataset's last complete month, or the custom range end if earlier).
+// Months after a series' last sale therefore count as missing, so an inactive or
+// discontinued series cannot produce a forecast that starts in the past.
+function toSeries(analysis, target, anchorEnd = null, closureMonths = new Set()) {
+    const points = analysis.trend
+        .filter(month => !month.partial)
+        .map(month => {
+            const closure = closureMonths.has(month.name);
+            // A closure month is known but not representative demand, so its value is withheld from the models.
+            return { month: month.name, value: month.rows && !closure ? month[target] : null, rows: month.rows, closure };
+        });
+    if (anchorEnd && points.length) {
+        for (let month = nextMonth(points.at(-1).month, 1); month <= anchorEnd; month = nextMonth(month, 1)) {
+            points.push({ month, value: null, rows: 0, closure: closureMonths.has(month) });
+        }
+    }
+    return points;
+}
+
+// Builds the series the models are fitted on. Closure months are not real demand:
+// leading and trailing ones are cut off (a trailing run is skipped again when
+// projecting forward), and interior ones are filled by straight-line interpolation
+// so the monthly spacing the models rely on is preserved. Filled months are flagged
+// and are never scored in the backtest.
+function modelSeries(history) {
+    const first = history.findIndex(point => !point.closure);
+    let last = -1;
+    history.forEach((point, index) => { if (!point.closure) last = index; });
+    if (first === -1) return { points: [], tailSkip: history.length };
+    const points = [];
+    for (let index = first; index <= last; index += 1) {
+        const point = history[index];
+        if (!point.closure) {
+            if (point.value !== null) points.push({ month: point.month, value: point.value, imputed: false });
+            continue;
+        }
+        let before = index - 1;
+        while (history[before].closure) before -= 1;
+        let after = index + 1;
+        while (history[after].closure) after += 1;
+        const a = history[before].value;
+        const b = history[after].value;
+        if (a === null || b === null) continue;
+        points.push({ month: point.month, value: a + (b - a) * (index - before) / (after - before), imputed: true });
+    }
+    return { points, tailSkip: history.length - 1 - last };
+}
+
+function forecastAnchor(rows, filters) {
+    const lastComplete = datasetBounds(rows).lastCompleteMonth;
+    if (!lastComplete) return null;
+    return filters.period === 'Custom Range' && /^\d{4}-\d{2}/.test(filters.end || '') && filters.end.slice(0, 7) < lastComplete
+        ? filters.end.slice(0, 7)
+        : lastComplete;
 }
 
 function evaluateSeries(series, horizon, target, filters = {}, orderCount = 0, model = 'arima') {
     const history = series.map(point => ({ ...point }));
+    const { points: modelPoints, tailSkip } = modelSeries(history);
+    const values = modelPoints.map(point => point.value);
     const active = history.filter(point => point.value !== null);
-    const values = active.map(point => point.value);
-    const missing = history.filter(point => point.value === null).map(point => point.month);
+    // Closure months are known (the shop was closed), so they are not "missing".
+    const missing = history.filter(point => point.value === null && !point.closure).map(point => point.month);
     const result = {
         status: 'insufficient',
         reason: '',
@@ -235,6 +245,8 @@ function evaluateSeries(series, horizon, target, filters = {}, orderCount = 0, m
             calendarMonths: history.length,
             activeMonths: active.length,
             missingMonths: missing,
+            closureMonths: history.filter(point => point.closure).map(point => point.month),
+            imputedMonths: modelPoints.filter(point => point.imputed).map(point => point.month),
             start: history[0]?.month ?? null,
             end: history.at(-1)?.month ?? null,
             orders: orderCount
@@ -243,49 +255,73 @@ function evaluateSeries(series, horizon, target, filters = {}, orderCount = 0, m
 
     if (!history.length) result.reason = 'No matching transaction history is available in this scope.';
     else if (!customRangeIsComplete(filters)) result.reason = 'Choose complete calendar months for the selected custom date range.';
-    else if (missing.length) result.reason = `History has ${missing.length} month${missing.length === 1 ? '' : 's'} with no records. Missing months are unknown demand, not zero demand.`;
+    else if (missing.length) {
+        const trimmed = history.slice(0, history.length - tailSkip);
+        let trailing = 0;
+        while (trailing < trimmed.length && trimmed[trimmed.length - 1 - trailing].value === null && !trimmed[trimmed.length - 1 - trailing].closure) trailing += 1;
+        result.reason = trailing > 0
+            ? `No sales records in the latest ${trailing} month${trailing === 1 ? '' : 's'} (through ${history.at(-1).month}); this series looks inactive or discontinued. Missing months are unknown demand, not zero demand.`
+            : `History has ${missing.length} month${missing.length === 1 ? '' : 's'} with no records. Missing months are unknown demand, not zero demand.`;
+    }
     else if (values.some(value => value < 0)) result.reason = 'Negative monthly demand totals cannot be forecast. Review return treatment or choose another metric.';
-    else if (history.length < MINIMUM_HISTORY) result.reason = `At least ${MINIMUM_HISTORY} consecutive observed months are required for an exploratory forecast; this scope has ${history.length}.`;
+    else if (values.length < MINIMUM_HISTORY) result.reason = `At least ${MINIMUM_HISTORY} consecutive observed months are required for an exploratory forecast; this scope has ${values.length}${result.coverage.closureMonths.length ? ' (declared closure months are not counted)' : ''}.`;
     if (result.reason) return result;
 
     const holdoutMonths = values.length < 6 ? 0 : values.length >= 36 ? 12 : Math.min(6, values.length - 3);
-    const training = values.slice(0, -holdoutMonths);
+    const training = values.slice(0, values.length - holdoutMonths);
     let rmse = null;
     if (holdoutMonths > 0) {
-        const actual = values.slice(-holdoutMonths);
-        const predicted = runModel(training, holdoutMonths, model);
-        const errors = actual.map((value, index) => value - predicted[index]);
-        const absoluteErrors = errors.map(Math.abs);
-        const nonzeroPercentageErrors = actual.flatMap((value, index) => value === 0 ? [] : [Math.abs(errors[index] / value) * 100]);
-        rmse = Math.sqrt(meanOf(errors.map(error => error ** 2)));
-        const baselineMae = meanOf(actual.map(value => Math.abs(value - training.at(-1))));
+        const predictedAll = runModel(training, holdoutMonths, model);
+        // Test months filled in across a closure are not real observations, so they are not scored.
+        const testPoints = modelPoints.slice(values.length - holdoutMonths)
+            .map((point, index) => ({ ...point, predicted: predictedAll[index] }))
+            .filter(point => !point.imputed);
+        const actual = testPoints.map(point => point.value);
+        const predicted = testPoints.map(point => point.predicted);
+        if (actual.length) {
+            const errors = actual.map((value, index) => value - predicted[index]);
+            const absoluteErrors = errors.map(Math.abs);
+            const nonzeroPercentageErrors = actual.flatMap((value, index) => value === 0 ? [] : [Math.abs(errors[index] / value) * 100]);
+            rmse = Math.sqrt(meanOf(errors.map(error => error ** 2)));
+            // Benchmark: repeat the last training month for every test month.
+            const baselineErrors = actual.map(value => value - training.at(-1));
+            const baselineMae = meanOf(baselineErrors.map(Math.abs));
+            const baselineRmse = Math.sqrt(meanOf(baselineErrors.map(error => error ** 2)));
+            const baselineNonzero = actual.flatMap((value, index) => value === 0 ? [] : [Math.abs(baselineErrors[index] / value) * 100]);
+            const modelMae = meanOf(absoluteErrors);
 
-        result.validation = {
-            months: holdoutMonths,
-            trainingMonths: training.length,
-            start: history.at(-holdoutMonths).month,
-            end: history.at(-1).month,
-            mae: meanOf(absoluteErrors),
-            rmse,
-            mape: meanOf(nonzeroPercentageErrors),
-            mapeExcludedMonths: holdoutMonths - nonzeroPercentageErrors.length,
-            baselineMae,
-            points: actual.map((value, index) => ({
-                month: history[history.length - holdoutMonths + index].month,
-                actual: value,
-                predicted: predicted[index]
-            }))
-        };
+            result.validation = {
+                months: holdoutMonths,
+                scoredMonths: actual.length,
+                trainingMonths: training.length,
+                start: testPoints[0].month,
+                end: testPoints.at(-1).month,
+                mae: modelMae,
+                rmse,
+                mape: meanOf(nonzeroPercentageErrors),
+                mapeExcludedMonths: actual.length - nonzeroPercentageErrors.length,
+                baselineMae,
+                baselineRmse,
+                baselineMape: meanOf(baselineNonzero),
+                beatsBaseline: modelMae < baselineMae,
+                improvementVsBaseline: baselineMae > 0 ? (1 - modelMae / baselineMae) * 100 : null,
+                points: testPoints.map(point => ({ month: point.month, actual: point.value, predicted: point.predicted }))
+            };
+        }
     }
 
-    const valuesForecast = runModel(values, horizon, model);
+    // Project from the last normal month, then drop the months that are already known closure months.
+    const rawForecast = runModel(values, horizon + tailSkip, model);
+    const valuesForecast = rawForecast.slice(tailSkip);
+    valuesForecast.label = rawForecast.label;
+    const modelLabel = valuesForecast.label || MODEL_NAMES[model];
     const average = meanOf(values);
     const historicalSpread = Math.sqrt(meanOf(values.map(value => (value - average) ** 2)));
     const fallbackRange = Math.max(historicalSpread, Math.abs(average) * 0.25, 1);
     const rangeMethod = rmse === null ? 'historical_variability' : 'backtest_rmse';
     const next = valuesForecast.map((value, index) => {
         const month = nextMonth(result.coverage.end, index + 1);
-        const range = (rmse ?? fallbackRange) * Math.sqrt(index + 1);
+        const range = (rmse ?? fallbackRange) * Math.sqrt(index + 1 + tailSkip);
         return {
             month,
             value,
@@ -299,13 +335,14 @@ function evaluateSeries(series, horizon, target, filters = {}, orderCount = 0, m
 
     result.status = 'available';
     result.reason = '';
-    result.model = MODEL_NAMES[model];
+    result.model = modelLabel;
     result.forecast = next;
     result.forecastDemand = forecastDemand;
     result.endDemand = valuesForecast.at(-1);
     result.growth = growth;
     result.trend = growth === null ? 'Unavailable' : growth > 2 ? 'Increasing' : growth < -2 ? 'Decreasing' : 'Stable';
-    result.reliability = values.length < 6 ? 'very_low' : values.length < 18 ? 'low' : 'backtested';
+    result.growthWithinError = rmse !== null && result.currentDemand !== null && Math.abs(forecastDemand - result.currentDemand) < rmse;
+    result.reliability = values.length < 6 ? 'very_low' : values.length < 18 ? 'low' : (result.validation?.beatsBaseline ? 'backtested' : 'backtested_weak');
     return result;
 }
 
@@ -319,8 +356,8 @@ function scopedAnalysis(rows, filters, { category = '', province = null } = {}) 
     return analyzeRows(rows, nextFilters, { summaryOnly: true });
 }
 
-function summarize(analysis, target, horizon, filters, { includeSeries = false, includeValidationPoints = false } = {}, model = 'arima') {
-    const result = evaluateSeries(toSeries(analysis, target), horizon, target, filters, analysis.summary.orders, model);
+function summarize(analysis, target, horizon, filters, { includeSeries = false, includeValidationPoints = false, anchorEnd = null, closureMonths = new Set() } = {}, model = 'arima') {
+    const result = evaluateSeries(toSeries(analysis, target, anchorEnd, closureMonths), horizon, target, filters, analysis.summary.orders, model);
     const validation = result.validation && !includeValidationPoints
         ? Object.fromEntries(Object.entries(result.validation).filter(([key]) => key !== 'points'))
         : result.validation;
@@ -332,6 +369,7 @@ function summarize(analysis, target, horizon, filters, { includeSeries = false, 
         forecastDemand: result.forecastDemand,
         endDemand: result.endDemand,
         growth: result.growth,
+        growthWithinError: result.growthWithinError ?? null,
         trend: result.trend,
         coverage: result.coverage,
         reliability: result.reliability,
@@ -341,24 +379,24 @@ function summarize(analysis, target, horizon, filters, { includeSeries = false, 
 }
 
 function effectiveForecastFilters(rows, filters) {
-    const unboundedFilters = { ...filters, period: 'All Available Data', start: '', end: '' };
-    const unbounded = analyzeRows(rows, unboundedFilters, { summaryOnly: true });
     if (filters.period !== 'Last 12 Months' && filters.period !== 'Last 24 Months') return { ...filters };
-    const latestMonth = unbounded.trend.at(-1)?.name;
+    // "Last N months" for forecasting means the N most recent COMPLETE months.
+    const latestMonth = datasetBounds(rows).lastCompleteMonth;
     if (!latestMonth) return { ...filters };
-    const start = new Date(`${latestMonth}-01T00:00:00Z`);
-    start.setUTCMonth(start.getUTCMonth() - (filters.period === 'Last 12 Months' ? 11 : 23));
+    const start = nextMonth(latestMonth, -(filters.period === 'Last 12 Months' ? 11 : 23));
     const end = new Date(Date.UTC(Number(latestMonth.slice(0, 4)), Number(latestMonth.slice(5, 7)), 0));
     return {
         ...filters,
         period: 'Custom Range',
-        start: start.toISOString().slice(0, 10),
+        start: `${start}-01`,
         end: end.toISOString().slice(0, 10)
     };
 }
 
 function buildPairForecasts(rows, filters, horizon, target, model, base = analyzeRows(rows, filters)) {
     const pairForecasts = [];
+    const anchorEnd = forecastAnchor(rows, filters);
+    const closureMonths = datasetBounds(rows).closureMonths;
     for (const region of base.regions) {
         for (const province of region.provinces) {
             for (const item of province.categories) {
@@ -371,7 +409,7 @@ function buildPairForecasts(rows, filters, horizon, target, model, base = analyz
                     province: province.name,
                     region: region.name,
                     category: item.name,
-                    ...summarize(analysis, target, horizon, filters, {}, model)
+                    ...summarize(analysis, target, horizon, filters, { anchorEnd, closureMonths }, model)
                 });
             }
         }
@@ -382,10 +420,12 @@ function buildPairForecasts(rows, filters, horizon, target, model, base = analyz
 export function predictiveAnalytics(rows, filters = {}, horizon = 6, target = 'revenue', category = '', provinceKey = '', model = 'arima') {
     if (!FORECAST_HORIZONS.includes(horizon)) throw new Error('Choose a 3, 6, 9, or 12 month horizon.');
     if (!['revenue', 'orders', 'quantity'].includes(target)) throw new Error('Choose revenue, orders, or quantity as the forecast metric.');
-    if (!Object.hasOwn(MODEL_NAMES, model)) throw new Error('Choose a supported forecasting model.');
+    if (model !== 'auto' && !Object.hasOwn(MODEL_NAMES, model)) throw new Error('Choose a supported forecasting model.');
     if (typeof category !== 'string' || typeof provinceKey !== 'string') throw new Error('Invalid predictive selection.');
 
     const effectiveFilters = effectiveForecastFilters(rows, filters);
+    const anchorEnd = forecastAnchor(rows, effectiveFilters);
+    const closureMonths = datasetBounds(rows).closureMonths;
     const base = analyzeRows(rows, effectiveFilters);
     const categories = base.categories.map(item => item.name);
     const provinces = base.regions.flatMap(region => region.provinces.map(province => ({
@@ -409,6 +449,36 @@ export function predictiveAnalytics(rows, filters = {}, horizon = 6, target = 'r
     if (category && !categories.includes(category)) throw new Error('The selected category is outside the current analysis scope.');
     if (provinceKey && !selectedProvince) throw new Error('The selected province is outside the current analysis scope.');
 
+    if (model === 'auto') {
+        const selectionAnalysis = scopedAnalysis(rows, effectiveFilters, { category, province: selectedProvince });
+        const comparison = Object.entries(MODEL_NAMES).map(([candidate, name]) => {
+            const evaluated = evaluateSeries(
+                toSeries(selectionAnalysis, target, anchorEnd, closureMonths),
+                horizon,
+                target,
+                effectiveFilters,
+                selectionAnalysis.summary.orders,
+                candidate
+            );
+            return { model: candidate, name, rmse: evaluated.validation?.rmse ?? null };
+        });
+        const comparable = comparison
+            .filter(item => Number.isFinite(item.rmse))
+            .sort((left, right) => left.rmse - right.rmse);
+        const assignedModel = comparable[0]?.model || 'arima';
+        const modelAssignment = {
+            requested: 'auto',
+            assignedModel,
+            assignedModelName: MODEL_NAMES[assignedModel],
+            metric: 'RMSE',
+            error: comparable[0]?.rmse ?? null,
+            comparedModels: comparison,
+            fallback: comparable.length === 0
+        };
+        const result = predictiveAnalytics(rows, filters, horizon, target, category, provinceKey, assignedModel);
+        return { ...result, modelAssignment };
+    }
+
     const { pairForecasts } = buildPairForecasts(rows, effectiveFilters, horizon, target, model, base);
 
     const pairFilter = pairForecasts.filter(item => (!category || item.category === category)
@@ -420,7 +490,7 @@ export function predictiveAnalytics(rows, filters = {}, horizon = 6, target = 'r
 
     const categoryRows = categories.map(name => {
         const analysis = scopedAnalysis(rows, effectiveFilters, { category: name, province: selectedProvince });
-        return { category: name, ...summarize(analysis, target, horizon, effectiveFilters, {}, model) };
+        return { category: name, ...summarize(analysis, target, horizon, effectiveFilters, { anchorEnd, closureMonths }, model) };
     }).sort(compareDemand);
 
     const provinceRows = provinces.map(province => {
@@ -428,17 +498,17 @@ export function predictiveAnalytics(rows, filters = {}, horizon = 6, target = 'r
             category,
             province: { name: province.name, region: province.region }
         });
-        return { ...province, ...summarize(analysis, target, horizon, effectiveFilters, {}, model) };
+        return { ...province, ...summarize(analysis, target, horizon, effectiveFilters, { anchorEnd, closureMonths }, model) };
     }).sort(compareDemand);
 
     const chartAnalysis = scopedAnalysis(rows, effectiveFilters, { category, province: selectedProvince });
-    const chart = summarize(chartAnalysis, target, horizon, effectiveFilters, { includeSeries: true, includeValidationPoints: true }, model);
+    const chart = summarize(chartAnalysis, target, horizon, effectiveFilters, { includeSeries: true, includeValidationPoints: true, anchorEnd, closureMonths }, model);
     const detail = selectedProvince && category
         ? {
             province: selectedProvince.name,
             region: selectedProvince.region,
             category,
-            ...summarize(scopedAnalysis(rows, effectiveFilters, { category, province: selectedProvince }), target, horizon, effectiveFilters, {}, model)
+            ...summarize(scopedAnalysis(rows, effectiveFilters, { category, province: selectedProvince }), target, horizon, effectiveFilters, { anchorEnd, closureMonths }, model)
         }
         : null;
     const signals = pairForecasts.filter(item => item.status === 'available' && item.growth !== null)
@@ -451,6 +521,8 @@ export function predictiveAnalytics(rows, filters = {}, horizon = 6, target = 'r
         model: MODEL_NAMES[model],
         unit: { revenue: 'PHP', orders: 'orders', quantity: 'units' }[target],
         filters,
+        dataCompleteness: completenessNote(datasetBounds(rows)),
+        notes: target === 'orders' ? [ORDER_COUNT_NOTE] : [],
         effectiveRange: { start: chart.coverage.start, end: chart.coverage.end },
         options: {
             categories,
@@ -471,6 +543,27 @@ export function predictiveAnalytics(rows, filters = {}, horizon = 6, target = 'r
 const PRESCRIPTIVE_MIN_ORDERS = 20;
 const PRESCRIPTIVE_MIN_ACTIVE_MONTHS = 6;
 const clampScore = value => Math.max(0, Math.min(100, value));
+// Relative, uncalibrated scoring heuristics. Weights and cut-offs are exposed in
+// the API response so the page can state exactly what the score is made of.
+export const PRESCRIPTIVE_WEIGHTS = Object.freeze({ demandStrength: 0.35, growthMomentum: 0.30, demandConsistency: 0.20, categoryAffinity: 0.15 });
+export const STRATEGY_THRESHOLDS = Object.freeze({ strongDemandPercentile: 67, moderateDemandPercentile: 34, strongGrowthPercent: 5, steadyGrowthPercent: -5 });
+// Growth 0% -> 50, +25% -> 88, +50% -> 98; symmetric and never hard-clipped at +/-25%.
+export const growthScore = growth => 50 + 50 * Math.tanh(growth / 25);
+// Local-vs-overall sales mix: ratio 1 -> 50, 2 -> 75, 4+ -> 100, 0.5 -> 25, 0.25- -> 0.
+export const mixScore = ratio => clampScore(50 + 25 * Math.log2(Math.min(4, Math.max(0.25, ratio))));
+// Mid-rank percentile so tied demand values receive identical scores.
+export function percentileRanks(entries) {
+    const ordered = [...entries].sort((a, b) => a.value - b.value);
+    const ranks = new Map();
+    for (let start = 0; start < ordered.length;) {
+        let end = start;
+        while (end + 1 < ordered.length && ordered[end + 1].value === ordered[start].value) end += 1;
+        const percentile = ordered.length <= 1 ? 50 : (start + end) / 2 / (ordered.length - 1) * 100;
+        for (let index = start; index <= end; index += 1) ranks.set(ordered[index].key, percentile);
+        start = end + 1;
+    }
+    return ranks;
+}
 const rounded = value => value == null || !Number.isFinite(value) ? null : Math.round(value * 10) / 10;
 
 export function prescriptiveAnalytics(rows, filters = {}, horizon = 6, target = 'revenue', model = 'arima') {
@@ -479,7 +572,12 @@ export function prescriptiveAnalytics(rows, filters = {}, horizon = 6, target = 
     if (!Object.hasOwn(MODEL_NAMES, model)) throw new Error('Choose a supported forecasting model.');
 
     const effectiveFilters = effectiveForecastFilters(rows, filters);
-    const { selected, scope } = selectAnalyticsRows(rows, effectiveFilters, { summaryOnly: true });
+    const { selected: selectedWithPartial, scope } = selectAnalyticsRows(rows, effectiveFilters, { summaryOnly: true });
+    const bounds = datasetBounds(rows);
+    const anchorEnd = forecastAnchor(rows, effectiveFilters);
+    const monthOfRow = row => String(row.year_month || row.order_creation_date || '').slice(0, 7);
+    // A part-month must not count as a full month of sales.
+    const selected = selectedWithPartial.filter(row => !bounds.partialMonths.has(monthOfRow(row)) && !bounds.closureMonths.has(monthOfRow(row)));
     const { pairForecasts: sharedPairForecasts } = buildPairForecasts(rows, effectiveFilters, horizon, target, model);
     const forecastByPair = new Map(sharedPairForecasts.map(item => [item.key, item]));
     const pairMap = new Map();
@@ -494,11 +592,11 @@ export function prescriptiveAnalytics(rows, filters = {}, horizon = 6, target = 
     const orderedMonths = [...new Set(monthNames)].sort();
     if (orderedMonths.length) {
         const cursor = new Date(`${orderedMonths[0]}-01T00:00:00Z`);
-        const end = orderedMonths.at(-1);
+        const end = anchorEnd && anchorEnd > orderedMonths.at(-1) ? anchorEnd : orderedMonths.at(-1);
         while (cursor.toISOString().slice(0, 7) <= end) {
             // Preserve missing calendar months so consistency and eligibility do not hide gaps.
             const name = cursor.toISOString().slice(0, 7);
-            monthNames.push(name);
+            if (!bounds.closureMonths.has(name)) monthNames.push(name);
             cursor.setUTCMonth(cursor.getUTCMonth() + 1);
         }
     }
@@ -545,8 +643,10 @@ export function prescriptiveAnalytics(rows, filters = {}, horizon = 6, target = 
         });
         const activeMonths = history.filter(point => point.value !== null).length;
         const forecast = forecastByPair.get(pair.key);
-        const activeValues = history.filter(point => point.value !== null).map(point => point.value);
-        const currentDemand = forecast?.currentDemand ?? meanOf(activeValues.slice(-12));
+        // Average over the latest 12 calendar months. Months with no records inside a
+        // covered dataset are zero sales, so sparse pairs are not inflated by
+        // averaging only their active months.
+        const currentDemand = forecast?.status === 'available' ? forecast.currentDemand : meanOf(history.slice(-12).map(point => point.value ?? 0));
         const current12 = history.slice(-12);
         const prior12 = history.slice(-24, -12);
         const complete = list => list.length === 12 && list.every(point => point.value !== null);
@@ -565,9 +665,9 @@ export function prescriptiveAnalytics(rows, filters = {}, horizon = 6, target = 
         const growthEvidence = [yoyGrowth, usableForecastGrowth].filter(value => value != null && Number.isFinite(value));
         const growthEvidenceAvailable = growthEvidence.length > 0;
         const meanGrowth = growthEvidenceAvailable ? growthEvidence.reduce((sum, value) => sum + value, 0) / growthEvidence.length : null;
-        const growthMomentum = growthEvidenceAvailable ? clampScore(50 + meanGrowth * 2) : null;
+        const growthMomentum = growthEvidenceAvailable ? growthScore(meanGrowth) : null;
         const demandConsistency = months.length ? activeMonths / months.length * 100 : 0;
-        const categoryAffinity = affinityRatio == null ? 50 : clampScore(affinityRatio * 50);
+        const categoryAffinity = affinityRatio == null ? 50 : mixScore(affinityRatio);
         const insufficientReasons = [];
         if (pair.orders.size < PRESCRIPTIVE_MIN_ORDERS) insufficientReasons.push(`Fewer than ${PRESCRIPTIVE_MIN_ORDERS} distinct orders.`);
         if (activeMonths < PRESCRIPTIVE_MIN_ACTIVE_MONTHS) insufficientReasons.push(`Fewer than ${PRESCRIPTIVE_MIN_ACTIVE_MONTHS} active months.`);
@@ -584,6 +684,7 @@ export function prescriptiveAnalytics(rows, filters = {}, horizon = 6, target = 
             quantity: pair.quantity,
             yoyGrowth: rounded(yoyGrowth),
             growthEvidenceAvailable,
+            meanGrowth: rounded(meanGrowth),
             forecastDemand: forecast?.forecastDemand ?? null,
             forecastGrowth: rounded(forecast?.status === 'available' ? forecast.growth : null),
             forecastTrend: forecast?.trend ?? 'Unavailable',
@@ -592,6 +693,7 @@ export function prescriptiveAnalytics(rows, filters = {}, horizon = 6, target = 
             forecastModel: forecast?.model ?? null,
             forecastReliability: forecast?.reliability ?? null,
             forecastMape: rounded(forecast?.validation?.mape ?? null),
+            forecastBeatsBenchmark: forecast?.validation?.beatsBaseline ?? null,
             forecastBacktestMonths: forecast?.validation?.months ?? null,
             activeMonths,
             calendarMonths: months.length,
@@ -608,15 +710,16 @@ export function prescriptiveAnalytics(rows, filters = {}, horizon = 6, target = 
     });
 
     const scoreRows = pairs.filter(pair => pair.eligible);
-    const orderedDemand = [...scoreRows].sort((a, b) => (a.demand ?? 0) - (b.demand ?? 0));
-    const demandRanks = new Map(orderedDemand.map((pair, index) => [pair.key, orderedDemand.length <= 1 ? 50 : index / (orderedDemand.length - 1) * 100]));
+    const demandRanks = percentileRanks(scoreRows.map(pair => ({ key: pair.key, value: pair.demand ?? 0 })));
     for (const pair of scoreRows) {
         const demandStrength = demandRanks.get(pair.key) ?? 50;
         pair.factors.demandStrength = rounded(demandStrength);
-        pair.opportunityScore = rounded(demandStrength * 0.35 + pair.factors.growthMomentum * 0.30 + pair.factors.demandConsistency * 0.20 + pair.factors.categoryAffinity * 0.15);
-        if (demandStrength >= 67 && pair.factors.growthMomentum >= 60) pair.strategy = 'EXPAND SELECTIVELY';
-        else if (demandStrength >= 67 && pair.factors.growthMomentum >= 40) pair.strategy = 'SUSTAIN CORE DEMAND';
-        else if (demandStrength >= 34 && pair.factors.growthMomentum >= 60) pair.strategy = 'PILOT AND VALIDATE';
+        const w = PRESCRIPTIVE_WEIGHTS;
+        pair.opportunityScore = rounded(demandStrength * w.demandStrength + pair.factors.growthMomentum * w.growthMomentum + pair.factors.demandConsistency * w.demandConsistency + pair.factors.categoryAffinity * w.categoryAffinity);
+        const t = STRATEGY_THRESHOLDS;
+        if (demandStrength >= t.strongDemandPercentile && pair.meanGrowth >= t.strongGrowthPercent) pair.strategy = 'EXPAND SELECTIVELY';
+        else if (demandStrength >= t.strongDemandPercentile && pair.meanGrowth >= t.steadyGrowthPercent) pair.strategy = 'SUSTAIN CORE DEMAND';
+        else if (demandStrength >= t.moderateDemandPercentile && pair.meanGrowth >= t.strongGrowthPercent) pair.strategy = 'PILOT AND VALIDATE';
         else pair.strategy = 'MONITOR / LOWER PRIORITY';
     }
 
@@ -628,6 +731,15 @@ export function prescriptiveAnalytics(rows, filters = {}, horizon = 6, target = 
         model: MODEL_NAMES[model],
         minimumOrders: PRESCRIPTIVE_MIN_ORDERS,
         minimumActiveMonths: PRESCRIPTIVE_MIN_ACTIVE_MONTHS,
+        scoring: {
+            weights: PRESCRIPTIVE_WEIGHTS,
+            thresholds: STRATEGY_THRESHOLDS,
+            growthMomentum: '50 + 50 x tanh(average growth % / 25)',
+            salesMix: '50 + 25 x log2(local category share / overall category share), limited to ratios between 0.25 and 4',
+            note: 'Relative heuristics for ranking combinations against each other. They are not calibrated probabilities or return estimates.'
+        },
+        dataCompleteness: completenessNote(bounds),
+        notes: target === 'orders' ? [ORDER_COUNT_NOTE] : [],
         effectiveRange: { start: months[0] || null, end: months.at(-1) || null },
         categories,
         pairs: pairs.sort((a, b) => (b.opportunityScore ?? -1) - (a.opportunityScore ?? -1) || a.province.localeCompare(b.province) || a.category.localeCompare(b.category)),

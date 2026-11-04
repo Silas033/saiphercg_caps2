@@ -16,11 +16,13 @@ import {
 
 import "../styles/analytics-redesign.css";
 import "../styles/descriptive-chart.css";
-import { DEFAULT_SCOPE, useAnalytics, money, monthLabel } from "../hooks/useAnalytics";
+import { DEFAULT_SCOPE, useAnalytics, money, monthLabel, monthOverMonth } from "../hooks/useAnalytics";
 
-export default function DescriptiveAnalytics({ scope = DEFAULT_SCOPE, active = true, onViewPredictive = () => {} }) {
+export default function DescriptiveAnalytics({ scope = DEFAULT_SCOPE, active = true, metric: sharedMetric, onMetricChange = () => {}, onViewPredictive = () => {} }) {
     const { data, error, loading, refresh } = useAnalytics(scope, active);
-    const [metric, setMetric] = useState("Revenue");
+    const [localMetric, setLocalMetric] = useState("Revenue");
+    const metric = sharedMetric ?? localMetric;
+    const setMetric = sharedMetric == null ? setLocalMetric : onMetricChange;
     const [geoTab, setGeoTab] = useState("Top Provinces");
     const [selectedRegion, setSelectedRegion] = useState("");
     const [selectedProvince, setSelectedProvince] = useState("");
@@ -35,9 +37,9 @@ export default function DescriptiveAnalytics({ scope = DEFAULT_SCOPE, active = t
     const months = data.trend.map(item => monthLabel(item.name));
     const trendData = Object.fromEntries(["Revenue", "Orders", "Quantity"].map(name => [name, data.trend.map(item => item[name.toLowerCase()])]));
     const values = trendData[metric];
-    const latest = values.at(-1) || 0;
-    const previous = values.at(-2);
-    const change = previous ? (latest - previous) / previous * 100 : null;
+    const mom = monthOverMonth(data.trend, metric.toLowerCase());
+    const latest = mom.latest;
+    const change = mom.change;
     const formattedLatest = metric === "Revenue" ? money(latest) : latest.toLocaleString();
     const activeRegion = regionData.find(item => item.name === selectedRegion) || regionData[0];
     const activeProvince = activeRegion.provinces.find(item => item.name === selectedProvince) || activeRegion.provinces[0];
@@ -97,8 +99,7 @@ export default function DescriptiveAnalytics({ scope = DEFAULT_SCOPE, active = t
 
             <section className="rd-card descriptive-insights-card" id="da-insights" style={{ marginBottom: 18 }}>
                 <div className="rd-card-head between">
-                    <div className="rd-card-title-with-icon">
-                        <div className="rd-icon amber"><FaLightbulb /></div>
+                    <div>
                         <div>
                             <h2>Key Business Takeaways</h2>
                             <p>Core commercial facts and sales benchmarks established from historical records.</p>
@@ -198,7 +199,7 @@ export default function DescriptiveAnalytics({ scope = DEFAULT_SCOPE, active = t
 
                     <div className="rd-trend-foot">
                         <div>
-                            <span>Latest</span>
+                            <span>Latest complete month{mom.latestMonth ? ` · ${monthLabel(mom.latestMonth)}` : ""}</span>
                             <strong>{formattedLatest}</strong>
                         </div>
                         <div className={change === null ? "" : change >= 0 ? "positive" : "negative"}>
@@ -206,6 +207,8 @@ export default function DescriptiveAnalytics({ scope = DEFAULT_SCOPE, active = t
                             {change === null ? "No previous month for comparison" : `${Math.abs(change).toFixed(1)}% vs previous month`}
                         </div>
                     </div>
+                    {mom.closureMonths.length > 0 && <p className="descriptive-chart-caption">{mom.closureMonths.map(monthLabel).join(", ")} include a declared shop closure and are excluded from the month-over-month comparison. The lower totals reflect days the shop did not sell, not weaker demand.</p>}
+                    {mom.partialMonth && <p className="descriptive-chart-caption">{monthLabel(mom.partialMonth)} is incomplete (data runs through {data.scope?.completeness?.dataThrough}) and is excluded from the month-over-month comparison. Its chart point is a part-month, not a drop in sales.</p>}
                 </section>
 
                 <section className="rd-card" id="da-geography">
@@ -379,13 +382,13 @@ export default function DescriptiveAnalytics({ scope = DEFAULT_SCOPE, active = t
     );
 }
 
-function DescriptiveTrendChart({ rows, metric }) {
+export function DescriptiveTrendChart({ rows, metric }) {
     const [xInterval, setXInterval] = useState('monthly');
     const [yInterval, setYInterval] = useState('auto');
     const [zoom, setZoom] = useState(1);
     const [expanded, setExpanded] = useState(false);
     const [hoveredPoint, setHoveredPoint] = useState(null);
-    const points = rows.map(row => ({ month: row.name, value: Number(row[metric.toLowerCase()]) || 0 }));
+    const points = rows.map(row => ({ month: row.name, value: Number(row[metric.toLowerCase()]) || 0, partial: !!row.partial, closure: !!row.closure }));
     const values = points.map(point => point.value);
     const rawMinimum = Math.min(0, ...values);
     const rawMaximum = Math.max(1, ...values);
@@ -447,7 +450,7 @@ function DescriptiveTrendChart({ rows, metric }) {
         </div>
         {intervalTooSmall && <p className="descriptive-chart-hint" role="status">That interval is too small for this value range, so the axis uses an automatic interval to keep labels readable.</p>}
         <div className="descriptive-chart-scroll"><div className="descriptive-chart-plot">
-            {hoveredPoint && <div className="descriptive-chart-tooltip" role="status"><strong>Actual</strong><span>{formatPeriod(hoveredPoint.month)}</span><b>{formatValue(hoveredPoint.value)}</b></div>}
+            {hoveredPoint && <div className="descriptive-chart-tooltip" role="status"><strong>Actual</strong><span>{formatPeriod(hoveredPoint.month)}{hoveredPoint.partial ? " (part-month, incomplete)" : hoveredPoint.closure ? " (shop closure in this month)" : ""}</span><b>{formatValue(hoveredPoint.value)}</b></div>}
             <svg className="descriptive-chart-svg" style={{ width: zoom > 1 ? `${plotWidth}px` : '100%', height: expanded ? 'min(62vh, 560px)' : undefined }} viewBox={`0 0 ${plotWidth} ${plotHeight}`} role="img" aria-label={`Monthly actual ${metric.toLowerCase()} trend`}>
                 {yTicks.map(value => <g key={`y-${value}`}><line x1="64" x2={plotWidth - 26} y1={yPosition(value)} y2={yPosition(value)} className="descriptive-chart-grid" /><text x="56" y={yPosition(value) + 4} textAnchor="end">{formatValue(value)}</text></g>)}
                 {points.length > 1 && <polyline points={linePoints} className="descriptive-chart-line" />}

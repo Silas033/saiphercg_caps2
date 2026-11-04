@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import Sidebar from "./components/Sidebar";
 import Topbar from "./components/Topbar";
@@ -11,6 +11,7 @@ import DescriptiveAnalytics from "./pages/DescriptiveAnalytics";
 import PredictiveAnalytics from "./pages/PredictiveAnalytics";
 import PrescriptiveAnalytics from "./pages/PrescriptiveAnalytics";
 import ExecutiveOverview from "./pages/ExecutiveOverview";
+import LoginPage from "./pages/LoginPage";
 import { DEFAULT_SCOPE } from "./hooks/useAnalytics";
 import { DEFAULT_FORECAST_SETTINGS } from "./data/forecastSettings";
 import { getPageMeta, scrollToSection } from "./data/navigationStructure";
@@ -18,13 +19,53 @@ import { getPageMeta, scrollToSection } from "./data/navigationStructure";
 export default function App() {
     const [analysisScope, setAnalysisScope] = useState(DEFAULT_SCOPE);
     const [forecastSettings, setForecastSettings] = useState(DEFAULT_FORECAST_SETTINGS);
+    const [descriptiveMetric, setDescriptiveMetric] = useState("Revenue");
+    const [forecastSelection, setForecastSelection] = useState({ category: "", provinceKey: "" });
+    const [prescriptiveSelection, setPrescriptiveSelection] = useState({ category: "All Categories", pairKey: "" });
     const [predictiveSelectionRequest, setPredictiveSelectionRequest] = useState(null);
     const [prescriptiveReturn, setPrescriptiveReturn] = useState(null);
     const [prescriptiveReturnRequest, setPrescriptiveReturnRequest] = useState(null);
     const [activePage, setActivePage] = useState("overview");
     const [activeSection, setActiveSection] = useState("ov-answers");
     const [visitedAnalyticsPages, setVisitedAnalyticsPages] = useState(() => new Set(["overview"]));
+    const [isAuthenticated, setIsAuthenticated] = useState(() => {
+        try {
+            return window.sessionStorage.getItem("saipher-dashboard-authenticated") === "true";
+        } catch {
+            return false;
+        }
+    });
     const analyticsPages = ["overview", "descriptive-analytics", "predictive-analytics", "prescriptive-analytics"];
+
+    useEffect(() => {
+        document.title = isAuthenticated ? "SAIPHER CG DSS" : "Saipher Login";
+    }, [isAuthenticated]);
+
+    if (!isAuthenticated) {
+        return <LoginPage onAuthenticated={() => {
+            try {
+                window.sessionStorage.setItem("saipher-dashboard-authenticated", "true");
+            } catch {
+                // Keep the dashboard available for this tab if session storage is disabled.
+            }
+            setIsAuthenticated(true);
+        }} />;
+    }
+
+    function handleLogout() {
+        try {
+            window.sessionStorage.removeItem("saipher-dashboard-authenticated");
+        } catch {
+            // The in-memory login gate still closes if session storage is unavailable.
+        }
+        setIsAuthenticated(false);
+    }
+
+    function applyAnalysisScope(scope) {
+        setAnalysisScope(scope);
+        setForecastSelection({ category: "", provinceKey: "" });
+        setPrescriptiveSelection({ category: "All Categories", pairKey: "" });
+    }
 
     function navigateToPage(page, sectionId = null) {
         if (analyticsPages.includes(page)) {
@@ -56,6 +97,7 @@ export default function App() {
 
     function openPredictiveForecast({ category, provinceKey, pairKey, region, province }) {
         const requestId = Date.now();
+        setForecastSelection({ category, provinceKey });
         setPredictiveSelectionRequest({ category, provinceKey, requestId });
         setPrescriptiveReturn({ category, pairKey, region, province });
         navigateToPage("predictive-analytics");
@@ -70,6 +112,7 @@ export default function App() {
     function exitPrescriptivePairForecast() {
         setPredictiveSelectionRequest(null);
         setPrescriptiveReturn(null);
+        setForecastSelection({ category: "", provinceKey: "" });
     }
 
     function renderPage(page = activePage) {
@@ -80,7 +123,11 @@ export default function App() {
                 return (
                     <ExecutiveOverview
                         scope={analysisScope}
+                        descriptiveMetric={descriptiveMetric}
+                        onDescriptiveMetricChange={setDescriptiveMetric}
                         forecastSettings={forecastSettings}
+                        forecastSelection={forecastSelection}
+                        prescriptiveSelection={prescriptiveSelection}
                         onNavigate={navigateToPage}
                         onViewPredictive={openPredictiveForecast}
                     />
@@ -93,22 +140,26 @@ export default function App() {
                 return <DataPreparation setActivePage={navigateToPage} />;
 
             case "analysis-controls":
-                return <AnalysisControls setActivePage={navigateToPage} scope={analysisScope} onApply={setAnalysisScope} />;
+                return <AnalysisControls setActivePage={navigateToPage} scope={analysisScope} onApply={applyAnalysisScope} />;
 
             case "descriptive-analytics":
-                return <DescriptiveAnalytics scope={analysisScope} active={page === activePage} onViewPredictive={() => navigateToPage("predictive-analytics")} />;
+                return <DescriptiveAnalytics scope={analysisScope} active={page === activePage} metric={descriptiveMetric} onMetricChange={setDescriptiveMetric} onViewPredictive={() => navigateToPage("predictive-analytics")} />;
 
             case "predictive-analytics":
-                return <PredictiveAnalytics scope={analysisScope} active={page === activePage} forecastSettings={forecastSettings} onForecastSettingsChange={setForecastSettings} selectionRequest={predictiveSelectionRequest} prescriptiveReturn={prescriptiveReturn} onReturnToStrategy={returnToPrescriptiveStrategy} onExitPairForecast={exitPrescriptivePairForecast} onViewPrescriptive={() => navigateToPage("prescriptive-analytics")} />;
+                return <PredictiveAnalytics scope={analysisScope} active={page === activePage} forecastSettings={forecastSettings} onForecastSettingsChange={setForecastSettings} forecastSelection={forecastSelection} onForecastSelectionChange={setForecastSelection} selectionRequest={predictiveSelectionRequest} prescriptiveReturn={prescriptiveReturn} onReturnToStrategy={returnToPrescriptiveStrategy} onExitPairForecast={exitPrescriptivePairForecast} onViewPrescriptive={() => navigateToPage("prescriptive-analytics")} />;
 
             case "prescriptive-analytics":
-                return <PrescriptiveAnalytics scope={analysisScope} active={page === activePage} forecastSettings={forecastSettings} returnRequest={prescriptiveReturnRequest} onViewPredictive={openPredictiveForecast} />;
+                return <PrescriptiveAnalytics scope={analysisScope} active={page === activePage} forecastSettings={forecastSettings} selectedSelection={prescriptiveSelection} onSelectionChange={setPrescriptiveSelection} returnRequest={prescriptiveReturnRequest} onViewPredictive={openPredictiveForecast} />;
 
             default:
                 return (
                     <ExecutiveOverview
                         scope={analysisScope}
+                        descriptiveMetric={descriptiveMetric}
+                        onDescriptiveMetricChange={setDescriptiveMetric}
                         forecastSettings={forecastSettings}
+                        forecastSelection={forecastSelection}
+                        prescriptiveSelection={prescriptiveSelection}
                         onNavigate={navigateToPage}
                         onViewPredictive={openPredictiveForecast}
                     />
@@ -135,6 +186,7 @@ export default function App() {
                     activePage={activePage}
                     activeSection={activeSection}
                     scope={analysisScope}
+                    onLogout={handleLogout}
                 />
 
                 <SubNav

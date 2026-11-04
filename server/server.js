@@ -208,7 +208,7 @@ app.get("/api/forecasts", async (req, res) => {
     const provinceKey = req.query.provinceKey || "";
     try {
         filters = req.query.filters ? JSON.parse(req.query.filters) : {};
-        if (!filters || typeof filters !== "object" || Array.isArray(filters) || ![3, 6, 9, 12].includes(horizon) || !["revenue", "orders", "quantity"].includes(target) || !["arima", "prophet", "random_forest"].includes(model)) throw new Error();
+        if (!filters || typeof filters !== "object" || Array.isArray(filters) || ![3, 6, 9, 12].includes(horizon) || !["revenue", "orders", "quantity"].includes(target) || !["arima", "prophet", "random_forest", "auto"].includes(model)) throw new Error();
         analyzeRows([], filters);
     } catch { return res.status(400).json({ error: "Invalid forecast settings or analysis scope." }); }
     try {
@@ -243,6 +243,28 @@ app.get("/api/analytics", async (req, res) => {
         const snapshot = await analyticsCache.get(req.query.refresh === "1");
         res.set("Cache-Control", "no-store");
         res.json({ ...analyzeRows(snapshot.rows, filters), loadedAt: snapshot.loadedAt, source: "supabase" });
+    } catch (error) {
+        res.status(503).json({ error: error.message });
+    }
+});
+
+const datasetProfileCache = { key: null, value: null };
+app.get("/api/dataset-profile", async (req, res) => {
+    try {
+        // Reuses the analytics snapshot so the sync guard and refresh timing match the other pages.
+        const snapshot = await analyticsCache.get(req.query.refresh === "1");
+        res.set("Cache-Control", "no-store");
+        if (datasetProfileCache.key !== snapshot.loadedAt) {
+            const { data, error } = await supabase.rpc("dataset_profile");
+            if (error) {
+                throw new Error(/function|schema cache|does not exist/i.test(error.message)
+                    ? "The dataset_profile function is missing in Supabase. Run docs/sql/001_dataset_profile.sql in the Supabase SQL Editor."
+                    : `Unable to load the dataset profile: ${error.message}`);
+            }
+            datasetProfileCache.key = snapshot.loadedAt;
+            datasetProfileCache.value = data;
+        }
+        res.json({ ...datasetProfileCache.value, source: "supabase", loadedAt: snapshot.loadedAt });
     } catch (error) {
         res.status(503).json({ error: error.message });
     }

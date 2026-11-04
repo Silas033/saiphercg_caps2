@@ -43,6 +43,24 @@ export function useAnalytics(scope = DEFAULT_SCOPE, active = true) {
     return { ...current, refresh: () => setRetry(value => value + 1) };
 }
 
+// Month-over-month comparison between the two latest COMPLETE months. A part-month
+// (data ends before the month-end) is never compared as if it were a full month.
+export function monthOverMonth(trend = [], key = "revenue") {
+    // Part-months and declared shop-closure months are not comparable with a normal month.
+    const complete = trend.filter(row => !row.partial && !row.closure);
+    const latest = complete.at(-1);
+    const previous = complete.at(-2);
+    const latestValue = Number(latest?.[key]) || 0;
+    const previousValue = Number(previous?.[key]) || 0;
+    return {
+        latestMonth: latest?.name ?? null,
+        latest: latestValue,
+        change: previous && previousValue ? (latestValue - previousValue) / previousValue * 100 : null,
+        partialMonth: trend.find(row => row.partial && row.name > (latest?.name ?? ""))?.name ?? null,
+        closureMonths: trend.filter(row => row.closure && row.name > (complete.at(-2)?.name ?? "")).map(row => row.name)
+    };
+}
+
 export const money = value => new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP", maximumFractionDigits: 2 }).format(value || 0);
 export const monthLabel = value => value ? new Date(`${value.slice(0, 7)}-01T00:00:00Z`).toLocaleDateString("en", { month: "short", year: "numeric", timeZone: "UTC" }) : "No data";
 export const dateRange = scope => scope?.dateMin ? `${monthLabel(scope.dateMin)} – ${monthLabel(scope.dateMax)}` : "No prepared data";

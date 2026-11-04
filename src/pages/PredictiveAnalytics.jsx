@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
-import { FaLightbulb, FaClipboardCheck, FaChartLine, FaInfoCircle } from 'react-icons/fa';
+import { FaLightbulb, FaChartLine, FaInfoCircle, FaSlidersH } from 'react-icons/fa';
 import { fetchPredictive, getCachedPredictive } from '../data/analyticsApi';
 import { DEFAULT_FORECAST_SETTINGS } from '../data/forecastSettings';
-import { DEFAULT_SCOPE, monthLabel } from '../hooks/useAnalytics';
+import { DEFAULT_SCOPE, monthLabel, useAnalytics } from '../hooks/useAnalytics';
 import '../styles/analytics-redesign.css';
 import '../styles/predictive.css';
 
@@ -15,16 +15,28 @@ const formatValue = (value, target) => {
 
 const formatPercent = value => value == null ? 'N/A' : `${value > 0 ? '+' : ''}${new Intl.NumberFormat('en-PH', { maximumFractionDigits: 1 }).format(value)}%`;
 const formatChange = (current, forecast, target) => current == null || forecast == null ? 'N/A' : `${forecast - current > 0 ? '+' : ''}${formatValue(forecast - current, target)}`;
-const forecastModelLabel = value => ({ arima: 'ARIMA', prophet: 'Prophet-style', random_forest: 'Random Forest Regression' }[value] || value);
-const reliabilityLabel = value => ({ very_low: 'Early projection', low: 'Moderate history', backtested: 'Accuracy verified' }[value] || 'Needs more history');
+const forecastModelLabel = value => ({ arima: 'ARIMA', prophet: 'Prophet-style', random_forest: 'Random Forest Regression', auto: 'Auto (Least Error)' }[value] || value);
+const reliabilityLabel = value => ({ very_low: 'Early projection', low: 'Moderate history', backtested: 'Backtested · beats last-month benchmark', backtested_weak: 'Backtested · no better than last-month benchmark' }[value] || 'Needs more history');
+const provinceSelectionLabel = key => {
+    if (!key) return 'All Provinces';
+    try {
+        const [region, province] = JSON.parse(key);
+        return province ? `${province} · ${region}` : 'Selected province';
+    } catch {
+        return 'Selected province';
+    }
+};
 const ROWS_PER_PAGE = 30;
+const EMPTY_FORECAST_SELECTION = Object.freeze({ category: '', provinceKey: '' });
 
-export default function PredictiveAnalytics({ scope = DEFAULT_SCOPE, active = true, forecastSettings = DEFAULT_FORECAST_SETTINGS, onForecastSettingsChange = () => {}, onViewPrescriptive = () => {}, onReturnToStrategy = () => {}, onExitPairForecast = () => {}, selectionRequest = null, prescriptiveReturn = null }) {
+export default function PredictiveAnalytics({ scope = DEFAULT_SCOPE, active = true, forecastSettings = DEFAULT_FORECAST_SETTINGS, onForecastSettingsChange = () => {}, forecastSelection = EMPTY_FORECAST_SELECTION, onForecastSelectionChange = () => {}, onViewPrescriptive = () => {}, onReturnToStrategy = () => {}, onExitPairForecast = () => {}, selectionRequest = null, prescriptiveReturn = null }) {
+    const { data: scopeAnalytics } = useAnalytics(scope, active);
     const [target, setTarget] = useState(forecastSettings.target);
     const [horizon, setHorizon] = useState(forecastSettings.horizon);
     const [forecastModel, setForecastModel] = useState(forecastSettings.model);
-    const [category, setCategory] = useState('');
-    const [provinceKey, setProvinceKey] = useState('');
+    const [modelAssignment, setModelAssignment] = useState(forecastSettings.modelAssignment || null);
+    const [category, setCategory] = useState(forecastSelection.category || '');
+    const [provinceKey, setProvinceKey] = useState(forecastSelection.provinceKey || '');
     const [draftTarget, setDraftTarget] = useState(forecastSettings.target);
     const [draftHorizon, setDraftHorizon] = useState(forecastSettings.horizon);
     const [draftForecastModel, setDraftForecastModel] = useState(forecastSettings.model);
@@ -37,8 +49,11 @@ export default function PredictiveAnalytics({ scope = DEFAULT_SCOPE, active = tr
     const [reliabilityPage, setReliabilityPage] = useState(1);
     const [rangePage, setRangePage] = useState(1);
     const [showReliabilityModal, setShowReliabilityModal] = useState(false);
-    const [breakdownLayout, setBreakdownLayout] = useState('stacked');
+    const [showForecastControlsModal, setShowForecastControlsModal] = useState(false);
+    const [showCategoryForecast, setShowCategoryForecast] = useState(false);
+    const [showProvinceForecast, setShowProvinceForecast] = useState(false);
     const forceRefresh = useRef(false);
+    const resolvedRequestKey = useRef(null);
     const scopeKey = JSON.stringify(scope);
     const requestKey = JSON.stringify({ scopeKey, target, horizon, forecastModel, category, provinceKey, revision });
     const [state, setState] = useState(() => {
@@ -50,10 +65,11 @@ export default function PredictiveAnalytics({ scope = DEFAULT_SCOPE, active = tr
         setTarget(forecastSettings.target);
         setHorizon(forecastSettings.horizon);
         setForecastModel(forecastSettings.model);
+        setModelAssignment(forecastSettings.modelAssignment || null);
         setDraftTarget(forecastSettings.target);
         setDraftHorizon(forecastSettings.horizon);
         setDraftForecastModel(forecastSettings.model);
-    }, [forecastSettings.target, forecastSettings.horizon, forecastSettings.model]);
+    }, [forecastSettings.target, forecastSettings.horizon, forecastSettings.model, forecastSettings.modelAssignment]);
 
     useEffect(() => {
         setCategory('');
@@ -61,6 +77,15 @@ export default function PredictiveAnalytics({ scope = DEFAULT_SCOPE, active = tr
         setDraftCategory('');
         setDraftProvinceKey('');
     }, [scopeKey]);
+
+    useEffect(() => {
+        const nextCategory = forecastSelection.category || '';
+        const nextProvinceKey = forecastSelection.provinceKey || '';
+        setCategory(nextCategory);
+        setProvinceKey(nextProvinceKey);
+        setDraftCategory(nextCategory);
+        setDraftProvinceKey(nextProvinceKey);
+    }, [forecastSelection.category, forecastSelection.provinceKey]);
 
     useEffect(() => {
         if (!selectionRequest) return;
@@ -80,11 +105,27 @@ export default function PredictiveAnalytics({ scope = DEFAULT_SCOPE, active = tr
 
     useEffect(() => {
         if (!active) return undefined;
+        if (resolvedRequestKey.current === requestKey && !forceRefresh.current) return undefined;
+        resolvedRequestKey.current = null;
         const controller = new AbortController();
         const requestParams = { scope, target, horizon, model: forecastModel, category, provinceKey };
         const cached = forceRefresh.current ? null : getCachedPredictive(requestParams);
         if (cached) {
-            setState({ key: requestKey, loading: false, data: cached });
+            if (cached.modelAssignment?.assignedModel) {
+                const assignment = cached.modelAssignment;
+                const assignedModel = assignment.assignedModel;
+                const assignedSettings = { target, horizon, model: assignedModel, modelAssignment: assignment };
+                const assignedKey = JSON.stringify({ scopeKey, target, horizon, forecastModel: assignedModel, category, provinceKey, revision });
+                setModelAssignment(assignment);
+                setForecastModel(assignedModel);
+                setDraftForecastModel(assignedModel);
+                onForecastSettingsChange(assignedSettings);
+                resolvedRequestKey.current = assignedKey;
+                setState({ key: assignedKey, loading: false, data: cached });
+            } else {
+                resolvedRequestKey.current = requestKey;
+                setState({ key: requestKey, loading: false, data: cached });
+            }
             return () => controller.abort();
         }
         setState({ key: requestKey, loading: true });
@@ -97,7 +138,21 @@ export default function PredictiveAnalytics({ scope = DEFAULT_SCOPE, active = tr
                     ...requestParams,
                     refresh
                 }, controller.signal);
-                setState({ key: requestKey, loading: false, data: result });
+                if (result.modelAssignment?.assignedModel) {
+                    const assignment = result.modelAssignment;
+                    const assignedModel = assignment.assignedModel;
+                    const assignedSettings = { target, horizon, model: assignedModel, modelAssignment: assignment };
+                    const assignedKey = JSON.stringify({ scopeKey, target, horizon, forecastModel: assignedModel, category, provinceKey, revision });
+                    setModelAssignment(assignment);
+                    setForecastModel(assignedModel);
+                    setDraftForecastModel(assignedModel);
+                    onForecastSettingsChange(assignedSettings);
+                    resolvedRequestKey.current = assignedKey;
+                    setState({ key: assignedKey, loading: false, data: result });
+                } else {
+                    resolvedRequestKey.current = requestKey;
+                    setState({ key: requestKey, loading: false, data: result });
+                }
             } catch (error) {
                 if (error.name !== 'AbortError') setState({ key: requestKey, loading: false, error: error.message });
             }
@@ -105,7 +160,7 @@ export default function PredictiveAnalytics({ scope = DEFAULT_SCOPE, active = tr
 
         load();
         return () => controller.abort();
-    }, [scopeKey, target, horizon, forecastModel, category, provinceKey, revision, requestKey, active]);
+    }, [scopeKey, target, horizon, forecastModel, category, provinceKey, revision, requestKey, active, onForecastSettingsChange]);
 
     const current = state.key === requestKey ? state : (() => {
         const data = getCachedPredictive({ scope, target, horizon, model: forecastModel, category, provinceKey });
@@ -113,18 +168,66 @@ export default function PredictiveAnalytics({ scope = DEFAULT_SCOPE, active = tr
     })();
     const data = current.data;
     const loading = current.loading;
-    const selectedProvince = data?.options.provinces.find(item => item.key === provinceKey);
+    const controlCategories = data?.options.categories || scopeAnalytics?.scope?.categories || [];
+    const controlProvinces = data?.options.provinces || (scopeAnalytics?.scope?.geography || []).flatMap(region => region.provinces.map(name => ({ key: JSON.stringify([region.region, name]), name, region: region.region })));
+    const selectedProvince = controlProvinces.find(item => item.key === provinceKey);
+    const selectedProvinceLabel = selectedProvince
+        ? `${selectedProvince.name} · ${selectedProvince.region}`
+        : provinceSelectionLabel(provinceKey);
     const selectionLabel = [selectedProvince?.name, category].filter(Boolean).join(' × ') || 'All Provinces × All Categories';
+    const targetLabel = target === 'revenue' ? 'Revenue' : target === 'orders' ? 'Orders' : 'Units Sold';
+    const globalCategoriesLabel = scope.categories == null
+        ? 'All Categories'
+        : scope.categories.length ? scope.categories.join(', ') : 'No Categories';
+    const globalPeriodLabel = scope.period === 'Custom Range'
+        ? `${scope.start || 'Start date'} – ${scope.end || 'End date'}`
+        : scope.period || 'All Available Data';
     const hasPendingChanges = draftTarget !== target || draftHorizon !== horizon || draftForecastModel !== forecastModel || draftCategory !== category || draftProvinceKey !== provinceKey;
 
     function generateForecast() {
         setTarget(draftTarget);
         setHorizon(draftHorizon);
         setForecastModel(draftForecastModel);
-        onForecastSettingsChange({ target: draftTarget, horizon: draftHorizon, model: draftForecastModel });
+        setModelAssignment(null);
+        if (draftForecastModel !== 'auto') {
+            onForecastSettingsChange({ target: draftTarget, horizon: draftHorizon, model: draftForecastModel, modelAssignment: null });
+        }
         setCategory(draftCategory);
         setProvinceKey(draftProvinceKey);
+        onForecastSelectionChange({ category: draftCategory, provinceKey: draftProvinceKey });
     }
+
+    function openForecastControls() {
+        setDraftTarget(target);
+        setDraftHorizon(horizon);
+        setDraftForecastModel(forecastModel);
+        setDraftCategory(category);
+        setDraftProvinceKey(provinceKey);
+        setShowForecastControlsModal(true);
+    }
+
+    function closeForecastControls() {
+        setDraftTarget(target);
+        setDraftHorizon(horizon);
+        setDraftForecastModel(forecastModel);
+        setDraftCategory(category);
+        setDraftProvinceKey(provinceKey);
+        setShowForecastControlsModal(false);
+    }
+
+    function applyForecastControls() {
+        generateForecast();
+        setShowForecastControlsModal(false);
+    }
+
+    useEffect(() => {
+        if (!showForecastControlsModal) return undefined;
+        const handleKeyDown = event => {
+            if (event.key === 'Escape') closeForecastControls();
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [showForecastControlsModal, target, horizon, forecastModel, category, provinceKey]);
 
     function exitPairForecast() {
         setCategory('');
@@ -148,55 +251,42 @@ export default function PredictiveAnalytics({ scope = DEFAULT_SCOPE, active = tr
     const readyPairs = data?.options.forecastablePairs || 0;
     const totalPairs = data?.options.totalPairs || 0;
     const readyPct = totalPairs > 0 ? Math.round((readyPairs / totalPairs) * 100) : 0;
-    const unreadyPairs = Math.max(0, totalPairs - readyPairs);
-    const mapeRaw = data?.chart.validation?.mape;
-    const mapeFormatted = mapeRaw == null ? 'N/A' : `${formatValue(mapeRaw, 'quantity')}%`;
-    const accuracyPct = mapeRaw != null ? Math.max(0, Math.min(100, Math.round((100 - Number(mapeRaw)) * 10) / 10)) : null;
-    const mapeTier = mapeRaw == null ? '' : mapeRaw <= 10 ? 'exceptional precision' : mapeRaw <= 20 ? 'strong commercial reliability' : mapeRaw <= 50 ? 'moderate commercial accuracy' : 'higher variance';
-
     return <div className="rd-page predictive-page">
-        <header className="rd-header">
+        <header className="rd-header" id="pa-parameters">
             <div>
                 <span className="rd-eyebrow">PREDICTIVE ANALYTICS</span>
                 <h1>Demand Forecast</h1>
                 <p>Compare expected demand across product categories and provinces, then inspect any province × category forecast.</p>
             </div>
-            {data && <div className="rd-header-note"><span>Forecast scope</span><strong>{selectionLabel}</strong><small>{data.horizon}-month horizon · {data.unit}</small></div>}
-        </header>
-
-        <section className="rd-card predictive-controls" id="pa-parameters">
-            <div className="rd-card-head between"><div><h2>Forecast Controls</h2><p>Choose a sales metric, product category, province, prediction model, and forecast duration, then generate the forecast.</p></div>
-                <div className="predictive-control-actions">
-                    <button className="predictive-refresh" type="button" onClick={regenerate} disabled={loading || hasPendingChanges}>{loading ? 'Updating…' : 'Refresh data'}</button>
-                    <button className="predictive-generate" type="button" onClick={generateForecast} disabled={loading}>{loading ? 'Generating…' : 'Generate Forecast'}</button>
+            <div className="rd-header-note predictive-header-note" aria-label="Active forecast settings">
+                <div className="predictive-header-note-title">
+                    <span>Forecast settings</span>
+                    <button type="button" className="predictive-edit-settings" onClick={openForecastControls}>
+                        <FaSlidersH aria-hidden="true" /> Edit settings
+                    </button>
                 </div>
+                <div className="predictive-header-settings-scroll">
+                    <div className="predictive-header-settings-grid">
+                        <div><small>Sales metric</small><strong>{targetLabel}</strong></div>
+                        <div><small>Product category</small><strong>{category || 'All Categories'}</strong></div>
+                        <div><small>Province</small><strong>{selectedProvinceLabel}</strong></div>
+                        <div><small>Forecast duration</small><strong>{horizon} months</strong></div>
+                        <div><small>Forecasting model</small><strong>{forecastModelLabel(forecastModel)}</strong>{modelAssignment?.requested === 'auto' && <em className="predictive-auto-assigned-label">Auto-assigned · lowest RMSE on the test months (selected on the same months it is scored on, so slightly optimistic)</em>}</div>
+                    </div>
+                </div>
+                {data?.dataCompleteness?.partialMonths?.length > 0 && <p className="predictive-inline-warning" role="status">Forecasts use complete months only. {data.dataCompleteness.partialMonths.map(monthLabel).join(', ')} {data.dataCompleteness.partialMonths.length === 1 ? 'is' : 'are'} excluded because the data runs only through {data.dataCompleteness.dataThrough}.</p>}
+                {data?.dataCompleteness?.closures?.length > 0 && <p className="predictive-method-note" role="status">Declared shop closure{data.dataCompleteness.closures.length === 1 ? '' : 's'} ({data.dataCompleteness.closures.map(closure => `${closure.start} to ${closure.end}`).join('; ')}) are treated as real zero-sales time, not missing data. Months mostly inside a closure ({data.dataCompleteness.closureMonths.map(monthLabel).join(', ')}) are left out of model training and shown as a shaded band on the chart.</p>}
+                {data?.notes?.map(note => <p key={note} className="predictive-method-note">{note}</p>)}
+                <p className="predictive-header-global-scope">
+                    Analysis scope: {scope.region || 'All Regions'} · {scope.province || 'All Provinces'} · {globalCategoriesLabel} · {globalPeriodLabel} · {scope.returns || 'Include All'}
+                </p>
             </div>
-            <div className="predictive-control-grid">
-                <label className="rd-field"><span>Sales Metric</span><select value={draftTarget} onChange={event => setDraftTarget(event.target.value)}><option value="revenue">Revenue (₱)</option><option value="orders">Orders</option><option value="quantity">Units Sold</option></select></label>
-                <label className="rd-field"><span>Product category</span><select value={draftCategory} onChange={event => setDraftCategory(event.target.value)}><option value="">All Categories</option>{data?.options.categories.map(item => <option key={item} value={item}>{item}</option>)}</select></label>
-                <label className="rd-field"><span>Province</span><select value={draftProvinceKey} onChange={event => setDraftProvinceKey(event.target.value)}><option value="">All Provinces</option>{data?.options.provinces.map(item => <option key={item.key} value={item.key}>{item.name} · {item.region}</option>)}</select></label>
-                <label className="rd-field"><span>Forecast duration</span><select value={draftHorizon} onChange={event => setDraftHorizon(Number(event.target.value))}><option value={3}>3 Months Ahead</option><option value={6}>6 Months Ahead</option><option value={9}>9 Months Ahead</option><option value={12}>12 Months Ahead</option></select></label>
-                <label className="rd-field"><span>Forecasting model</span><select value={draftForecastModel} onChange={event => setDraftForecastModel(event.target.value)}><option value="arima">ARIMA (Trend & Seasonality)</option><option value="prophet">Prophet (Flexible Growth & Cycles)</option><option value="random_forest">Random Forest (Pattern-Based ML)</option></select></label>
-            </div>
-            {hasPendingChanges && <p className="predictive-pending-note" role="status">Parameters changed. Select Generate Forecast to update the results.</p>}
-            <p className="predictive-scope-note">Analytics Scope: {scope.region || 'All Regions'} · {scope.province || 'All Provinces'} · {scope.categories == null ? 'All categories' : scope.categories.join(', ') || 'No categories selected'} · {scope.period || 'All Available Data'} · {scope.returns || 'Include All'}{scope.period === 'Custom Range' ? ` (${scope.start} to ${scope.end})` : ''}</p>
-            <p className="predictive-method-note">Initial projections can be generated with at least 3 consecutive months of sales. Full accuracy testing becomes highly reliable with 18+ months of data. Continuous, unbroken monthly records provide the most accurate forecast.</p>
-        </section>
+        </header>
 
         {loading && <p className="predictive-status" role="status">Loading scoped history and calculating forecasts…</p>}
         {current.error && <section className="rd-card predictive-error" role="alert"><h2>Forecast unavailable</h2><p>{current.error}</p><button type="button" className="rd-link-button" onClick={regenerate}>Retry</button></section>}
 
         {data && <>
-            <div className="predictive-executive-banner">
-                <FaLightbulb aria-hidden="true" />
-                <div className="predictive-executive-banner-text">
-                    <strong>Executive Demand Outlook:</strong> Projected average monthly demand is <b>{formatValue(data.chart.forecastDemand, target)}</b> ({formatPercent(data.chart.growth)} vs 12-month baseline), projected using <b>{data.chart.model || forecastModelLabel(forecastModel)}</b> over the next {data.horizon} months. Model reliability is evaluated as <b>{reliabilityLabel(data.chart.reliability)}</b>{data.chart.validation?.mape != null ? ` (${formatValue(data.chart.validation.mape, 'quantity')}% avg test error)` : ''}.
-                </div>
-                <button type="button" className="predictive-banner-btn" onClick={() => setShowReliabilityModal(true)}>
-                    <FaClipboardCheck aria-hidden="true" /> View Verification Details ⓘ
-                </button>
-            </div>
-
             <section className="rd-card predictive-signals" id="pa-signals">
                 <div className="rd-card-head between">
                     <div>
@@ -230,11 +320,10 @@ export default function PredictiveAnalytics({ scope = DEFAULT_SCOPE, active = tr
                         </small>
                         <div className="predictive-signal-hover-popover" role="tooltip">
                             <div className="predictive-popover-title">
-                                <FaLightbulb />
-                                <strong>Meaning of {row.province} × {row.category} Numbers</strong>
+                                <strong>{row.province} × {row.category}</strong>
                             </div>
                             <p className="predictive-popover-meaning">
-                                <b>Specific numbers explained:</b> Currently averaging <b>{curStr}/mo</b>. Over the next {horizon} months, demand is projected to climb to <b>{fcastStr}/mo</b> — a concrete net increase of <b>{changeStr}/mo</b> ({growthStr} expansion, {row.trend.toLowerCase()} trend).
+                                Currently averaging <b>{curStr}/mo</b>. Over the next {horizon} months, demand is projected to climb to <b>{fcastStr}/mo</b> — a concrete net increase of <b>{changeStr}/mo</b> ({growthStr} expansion, {row.trend.toLowerCase()} trend).
                             </p>
                             <p className="predictive-popover-guidance">
                                 <b>Decision guidance:</b> High-opportunity segment for preferential stock allocation and targeted campaigns. Click to isolate its demand trajectory in the chart below.
@@ -244,63 +333,35 @@ export default function PredictiveAnalytics({ scope = DEFAULT_SCOPE, active = tr
                 })}</div> : <EmptyState message="Growth opportunities will appear when combinations have enough continuous history." />}
             </section>
 
-        {data && <details className="rd-card predictive-summary-details">
-            <summary>Forecast Summary KPIs</summary>
-            <section className="rd-kpi-grid four predictive-kpis" aria-label="Forecast summary">
+        {data && <div className="predictive-summary-shell">
+          <section className="rd-card predictive-summary-card">
+            <div className="predictive-summary-heading">
+                <h2>Forecast Summary</h2>
+                <button type="button" className="predictive-kpi-inspect-btn" onClick={() => setShowReliabilityModal(true)}>Inspect Accuracy &amp; Bounds ⓘ</button>
+            </div>
+            <section className="rd-kpi-grid predictive-kpis" aria-label="Forecast summary">
                 <Kpi
                     label="Projected Monthly Demand"
                     value={monthlyDemandVal}
-                    specificValue={`${monthlyDemandVal} / mo`}
                     detail="Average projected sales per month across the selected duration"
                     meaning={`This ${monthlyDemandVal} is the forecasted average monthly ${unitWord} for ${selectionLabel} over the upcoming ${data.horizon} months using ${data.chart.model || forecastModelLabel(forecastModel)} (accumulating to ~${totalHorizonVal} over the entire ${data.horizon}-month horizon).`}
-                    guidance={`Safety stock & budgeting: Use ${monthlyDemandVal} as your target monthly sales quota and baseline inventory replenishment rate.`}
                 />
                 <Kpi
                     label="Projected Growth"
                     value={growthVal}
-                    specificValue={`${growthVal} vs baseline`}
-                    detail="Projected average compared with the latest 12-month sales average"
-                    meaning={isGrowthPos
-                        ? `This +${formatValue(data.chart.growth, 'quantity')}% means projected monthly demand will expand ${growthVal} higher than your past 12-month baseline. Buyer interest is trending upward.`
-                        : isGrowthNeg
-                        ? `This -${formatValue(Math.abs(data.chart.growth), 'quantity')}% means projected monthly demand will contract by ${growthVal} compared to your past 12-month baseline. Buyer demand is slowing down.`
-                        : `This 0.0% means monthly demand is holding steady, exactly matching your historical 12-month baseline average.`
-                    }
-                    guidance={isGrowthPos
-                        ? `Operations action: Prepare ~${growthVal} additional safety stock and fulfillment bandwidth to capture this projected market surge.`
-                        : isGrowthNeg
-                        ? `Operations action: Order conservatively and trim reorder sizes to avoid excess holding costs on slow-moving inventory.`
-                        : `Operations action: Continue standard replacement reordering at current steady rates.`
-                    }
+                    detail="Projected monthly average vs. the trailing 12-month average"
+                    meaning={`${growthVal} compares the average projected month over the next ${data.horizon} months with the average of the latest 12 complete months${isGrowthPos ? ' (projected above it)' : isGrowthNeg ? ' (projected below it)' : ''}. It is not a year-over-year figure and does not adjust for seasonality.${data.chart.growthWithinError ? ' This difference is smaller than the typical monthly forecast error of the backtest, so treat the direction as uncertain.' : ''}`}
+                
                 />
                 <Kpi
                     label="Forecast-Ready Segments"
                     value={`${readyPairs} / ${totalPairs}`}
-                    specificValue={`${readyPairs} of ${totalPairs} Pairs (${readyPct}%)`}
                     detail="Province × category combinations with sufficient sales history"
                     meaning={`Exactly ${readyPairs} out of ${totalPairs} province-category segments (${readyPct}%) have satisfied the continuity requirement (at least 3 to 18 consecutive months) for dependable algorithmic projection.`}
-                    guidance={unreadyPairs > 0
-                        ? `The other ${unreadyPairs} segments have broken or insufficient transaction records and require additional monthly sales uploads before projections activate.`
-                        : `Complete coverage: 100% of your regional product combinations have enough historical depth for AI forecasting.`
-                    }
-                />
-                <Kpi
-                    label="Forecast Accuracy (MAPE)"
-                    value={mapeFormatted}
-                    specificValue={mapeRaw != null ? `${mapeFormatted} Avg Error` : 'N/A'}
-                    detail="Average prediction error percentage; lower means higher accuracy"
-                    meaning={mapeRaw != null
-                        ? `At ${mapeFormatted}, backtests against real historical transactions show the model's predictions deviated from actual sales by an average of ${mapeFormatted} (yielding a ~${accuracyPct}% forecast accuracy, rated as ${mapeTier}).`
-                        : `Accuracy is currently N/A because this segment has under 18 continuous months of transaction history, which is required for rigorous holdout testing.`
-                    }
-                    guidance={mapeRaw != null
-                        ? `Commercial reliability: An error rate under 20% confirms high predictive integrity for procurement and inventory scheduling.`
-                        : `Projections currently use trend regression. Uploading additional continuous monthly transaction batches will automatically unlock backtested error scoring.`
-                    }
-                    action={<button type="button" className="predictive-kpi-inspect-btn" onClick={() => setShowReliabilityModal(true)}>Inspect Accuracy & Bounds ⓘ</button>}
                 />
             </section>
-        </details>}
+          </section>
+        </div>}
 
             <section className="rd-card predictive-fit-card predictive-overview-card" id="pa-overview">
                 <div className="rd-card-head between"><div><h2>Forecast Overview</h2><p>Ranked by average monthly forecast demand over the selected horizon. Use a row to open its category and province.</p></div><span className="rd-tag">{data.overview.length} forecastable pairs</span></div>
@@ -340,15 +401,12 @@ export default function PredictiveAnalytics({ scope = DEFAULT_SCOPE, active = tr
                         <p>{selectionLabel} · monthly {data.unit} · {data.chart.model || forecastModelLabel(forecastModel)}</p>
                     </div>
                     <div className="predictive-chart-head-actions">
-                        <button type="button" className="predictive-inspect-modal-btn" onClick={() => setShowReliabilityModal(true)}>
-                            <FaClipboardCheck aria-hidden="true" /> Inspect Model Accuracy & Bounds ⓘ
-                        </button>
                         <span className={`predictive-status-pill ${data.chart.status}`}>{data.chart.status === 'available' ? 'Forecast ready' : 'Insufficient sales history'}</span>
                     </div>
                 </div>
                 {data.chart.history.length ? <ForecastChart result={data.chart} target={target} /> : <EmptyState message="No matching transactions are available for this scope." />}
                 {data.chart.status !== 'available' && data.chart.history.length > 0 && <p className="predictive-inline-warning">{data.chart.reason}</p>}
-                {data.chart.status === 'available' && data.chart.reliability !== 'backtested' && <p className="predictive-inline-warning" role="status">{data.chart.reliability === 'very_low' ? 'Early estimate (limited history)' : 'Moderate history'}: {data.chart.coverage.calendarMonths} consecutive months are available. {data.chart.validation ? `Tested across ${data.chart.validation.months} test month${data.chart.validation.months === 1 ? '' : 's'}.` : 'Additional continuous months will improve forecast accuracy.'} Treat this as an early projection.</p>}
+                {data.chart.status === 'available' && data.chart.reliability !== 'backtested' && <p className="predictive-inline-warning" role="status">{data.chart.reliability === 'backtested_weak' ? `Backtested, but this model did not beat simply repeating the last observed month on the test months (MAE ${formatValue(data.chart.validation.mae, target)} vs ${formatValue(data.chart.validation.baselineMae, target)}). Treat the projection as indicative only.` : `${data.chart.reliability === 'very_low' ? 'Early estimate (limited history)' : 'Moderate history'}: ${data.chart.coverage.calendarMonths} consecutive months are available. ${data.chart.validation ? `Tested across ${data.chart.validation.months} test month${data.chart.validation.months === 1 ? '' : 's'}${data.chart.validation.beatsBaseline ? '' : ', without beating the last-month benchmark'}.` : 'Additional continuous months will improve forecast accuracy.'} Treat this as an early projection.`}</p>}
             </section>
 
             {data.detail && (() => {
@@ -407,19 +465,21 @@ export default function PredictiveAnalytics({ scope = DEFAULT_SCOPE, active = tr
                 </section>;
             })()}
 
-            <div className={breakdownLayout === 'grid' ? 'rd-grid-two predictive-grid' : 'predictive-breakdown-stack'} id="pa-breakdown">
-                <section className="rd-card predictive-fit-card predictive-category-card">
+            <div className="predictive-breakdown-stack" id="pa-breakdown">
+                <section className={`rd-card predictive-fit-card predictive-category-card ${showCategoryForecast ? '' : 'forecast-collapsed'}`}>
                     <div className="rd-card-head between">
                         <div>
                             <h2>Product Category Forecast</h2>
                             <p>{selectedProvince ? `Categories within ${selectedProvince.name}` : 'Compare categories across the current analysis scope.'}</p>
                         </div>
-                        <div className="rd-segmented predictive-layout-toggle" title="Switch breakdown table layout">
-                            <button type="button" className={breakdownLayout === 'stacked' ? 'active' : ''} onClick={() => setBreakdownLayout('stacked')}>Fitted Full Width</button>
-                            <button type="button" className={breakdownLayout === 'grid' ? 'active' : ''} onClick={() => setBreakdownLayout('grid')}>Side-by-Side</button>
+                        <div className="predictive-section-actions">
+                            <span className="rd-tag">{data.categoryRows.length} {data.categoryRows.length === 1 ? 'product category' : 'product categories'}</span>
+                            <button type="button" className="predictive-collapse-toggle" aria-expanded={showCategoryForecast} aria-controls="product-category-forecast-table" onClick={() => setShowCategoryForecast(value => !value)}>
+                                {showCategoryForecast ? 'Hide Product Category Forecast' : 'Show Product Category Forecast'}
+                            </button>
                         </div>
                     </div>
-                    <div className="rd-table-wrap"><table className="rd-table predictive-table"><thead><tr><th>Category</th><th>Current / month</th><th>Forecast / month</th><th>Change / month</th><th>Growth</th><th>Trend</th><th>Status</th></tr></thead><tbody>
+                    <div className="rd-table-wrap" id="product-category-forecast-table" hidden={!showCategoryForecast}><table className="rd-table predictive-table"><thead><tr><th>Category</th><th>Current / month</th><th>Forecast / month</th><th>Change / month</th><th>Growth</th><th>Trend</th><th>Status</th></tr></thead><tbody>
                         {data.categoryRows.map(row => {
                             const curStr = formatValue(row.currentDemand, target);
                             const fcastStr = formatValue(row.forecastDemand, target);
@@ -439,15 +499,20 @@ export default function PredictiveAnalytics({ scope = DEFAULT_SCOPE, active = tr
                     </tbody></table></div>
                 </section>
 
-                <section className="rd-card predictive-fit-card predictive-province-card forecast-fixed-card">
+                <section className={`rd-card predictive-fit-card predictive-province-card forecast-fixed-card ${showProvinceForecast ? '' : 'forecast-collapsed'}`}>
                     <div className="rd-card-head between">
                         <div>
                             <h2>Province Forecast</h2>
                             <p>{category ? `Where ${category} is forecast to perform.` : 'Compare provinces across the current analysis scope.'}</p>
                         </div>
-                        <span className="rd-tag">{data.provinceRows.length} provinces</span>
+                        <div className="predictive-section-actions">
+                            <span className="rd-tag">{data.provinceRows.length} provinces</span>
+                            <button type="button" className="predictive-collapse-toggle" aria-expanded={showProvinceForecast} aria-controls="province-forecast-table" onClick={() => setShowProvinceForecast(value => !value)}>
+                                {showProvinceForecast ? 'Hide Province Forecast' : 'Show all Province Forecast'}
+                            </button>
+                        </div>
                     </div>
-                    <div className="forecast-panel-scroll"><div className="rd-table-wrap"><table className="rd-table predictive-table"><thead><tr><th>Province</th><th>Region</th><th>Current / month</th><th>Forecast / month</th><th>Change / month</th><th>Growth</th><th>Status</th></tr></thead><tbody>
+                    <div className="forecast-panel-scroll" id="province-forecast-table" hidden={!showProvinceForecast}><div className="rd-table-wrap"><table className="rd-table predictive-table"><thead><tr><th>Province</th><th>Region</th><th>Current / month</th><th>Forecast / month</th><th>Change / month</th><th>Growth</th><th>Status</th></tr></thead><tbody>
                         {rowsForPage(data.provinceRows, provincePage).map(row => {
                             const curStr = formatValue(row.currentDemand, target);
                             const fcastStr = formatValue(row.forecastDemand, target);
@@ -465,7 +530,7 @@ export default function PredictiveAnalytics({ scope = DEFAULT_SCOPE, active = tr
                         })}
                         {!data.provinceRows.length && <tr><td colSpan="6">No provinces are available in this scope.</td></tr>}
                     </tbody></table></div></div>
-                    <SectionPagination total={data.provinceRows.length} page={provincePage} setPage={setProvincePage} label="Province forecast" />
+                    {showProvinceForecast && <SectionPagination total={data.provinceRows.length} page={provincePage} setPage={setProvincePage} label="Province forecast" />}
                 </section>
             </div>
 
@@ -473,6 +538,58 @@ export default function PredictiveAnalytics({ scope = DEFAULT_SCOPE, active = tr
                 <div><strong>Continue to Strategic Recommendations (Prescriptive Analytics)</strong><small>Explore automated action plans, target priorities, and resource allocation based on these forecasts.</small></div>
                 <button type="button" onClick={onViewPrescriptive}>View Prescriptive Analytics <span aria-hidden="true">→</span></button>
             </section>
+
+            {showForecastControlsModal && (
+                <div className="prescriptive-lightbox-backdrop predictive-controls-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) closeForecastControls(); }}>
+                    <section
+                        className="prescriptive-lightbox predictive-controls-lightbox"
+                        role="dialog"
+                        aria-modal="true"
+                        aria-labelledby="predictive-controls-dialog-title"
+                        onKeyDown={event => { if (event.key === 'Escape') closeForecastControls(); }}
+                    >
+                        <div className="prescriptive-lightbox-head">
+                            <div>
+                                <span>FORECAST CONTROLS</span>
+                                <h2 id="predictive-controls-dialog-title">Edit Forecast Settings</h2>
+                                <p>Choose the metric, product category, province, forecast duration, and model for this projection.</p>
+                            </div>
+                            <button type="button" aria-label="Close forecast settings" onClick={closeForecastControls}>×</button>
+                        </div>
+                        <div className="predictive-modal-control-scroll">
+                            <div className="predictive-control-grid predictive-modal-control-grid">
+                                <label className="rd-field"><span>Sales Metric</span><select value={draftTarget} onChange={event => setDraftTarget(event.target.value)}><option value="revenue">Revenue (₱)</option><option value="orders">Orders</option><option value="quantity">Units Sold</option></select></label>
+                                <label className="rd-field"><span>Product category</span><select value={draftCategory} onChange={event => setDraftCategory(event.target.value)}><option value="">All Categories</option>{draftCategory && !controlCategories.includes(draftCategory) && <option value={draftCategory}>{draftCategory}</option>}{controlCategories.map(item => <option key={item} value={item}>{item}</option>)}</select></label>
+                                <label className="rd-field"><span>Province</span><select value={draftProvinceKey} onChange={event => setDraftProvinceKey(event.target.value)}><option value="">All Provinces</option>{draftProvinceKey && !controlProvinces.some(item => item.key === draftProvinceKey) && <option value={draftProvinceKey}>{provinceSelectionLabel(draftProvinceKey)}</option>}{controlProvinces.map(item => <option key={item.key} value={item.key}>{item.name} · {item.region}</option>)}</select></label>
+                                <label className="rd-field"><span>Forecast duration</span><select value={draftHorizon} onChange={event => setDraftHorizon(Number(event.target.value))}><option value={3}>3 Months Ahead</option><option value={6}>6 Months Ahead</option><option value={9}>9 Months Ahead</option><option value={12}>12 Months Ahead</option></select></label>
+                                <label className="rd-field predictive-model-field">
+                                    <span>Forecasting model</span>
+                                    <select value={draftForecastModel} onChange={event => setDraftForecastModel(event.target.value)}>
+                                        <option value="auto">Auto (Least Error)</option>
+                                        <option value="arima">ARIMA (Trend &amp; Seasonality)</option>
+                                        <option value="prophet">Prophet (Flexible Growth &amp; Cycles)</option>
+                                        <option value="random_forest">Random Forest (Pattern-Based ML)</option>
+                                    </select>
+                                    {draftForecastModel === 'auto' && <small className="predictive-auto-model-note">Compares all models using validation RMSE and assigns the lowest-error model.</small>}
+                                    {modelAssignment?.requested === 'auto' && draftForecastModel === modelAssignment.assignedModel && <small className="predictive-auto-model-note" role="status">
+                                        {modelAssignment.fallback
+                                            ? `Auto-assigned ${modelAssignment.assignedModelName}; there was not enough holdout history to compare model errors.`
+                                            : `Auto-assigned ${modelAssignment.assignedModelName} · lowest validation RMSE: ${formatValue(modelAssignment.error, draftTarget)}.`}
+                                    </small>}
+                                </label>
+                            </div>
+                        </div>
+                        <p className="predictive-modal-scope">Analysis scope: {scope.region || 'All Regions'} · {scope.province || 'All Provinces'} · {globalCategoriesLabel} · {globalPeriodLabel} · {scope.returns || 'Include All'}</p>
+                        {hasPendingChanges && <p className="predictive-pending-note" role="status">Parameters changed. Select Generate Forecast to update the results.</p>}
+                        <p className="predictive-method-note">Initial projections can be generated with at least 3 consecutive months of sales. Full accuracy testing becomes highly reliable with 18+ months of data. Continuous, unbroken monthly records provide the most accurate forecast.</p>
+                        <div className="predictive-modal-actions">
+                            <button type="button" className="predictive-modal-cancel" onClick={closeForecastControls}>Cancel</button>
+                            <button type="button" className="predictive-refresh" onClick={regenerate} disabled={loading || hasPendingChanges}>{loading ? 'Updating…' : 'Refresh data'}</button>
+                            <button type="button" className="predictive-generate" onClick={applyForecastControls} disabled={loading && !hasPendingChanges}>{loading && !hasPendingChanges ? 'Generating…' : 'Generate Forecast'}</button>
+                        </div>
+                    </section>
+                </div>
+            )}
 
             {showReliabilityModal && (
                 <div className="prescriptive-lightbox-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) setShowReliabilityModal(false); }}>
@@ -500,12 +617,14 @@ export default function PredictiveAnalytics({ scope = DEFAULT_SCOPE, active = tr
                                         <div><dt>Forecasting model</dt><dd>{data.chart.model}</dd></div>
                                         <div><dt>Historical test period</dt><dd>{data.chart.validation.months} months · {monthLabel(data.chart.validation.start)} to {monthLabel(data.chart.validation.end)}</dd></div>
                                         <div><dt>Average Error % (MAPE)</dt><dd>{data.chart.validation.mape == null ? 'Not available' : `${formatValue(data.chart.validation.mape, 'quantity')}%`}</dd></div>
-                                        <div><dt>Average Unit Error (MAE)</dt><dd>{formatValue(data.chart.validation.mae, target)}</dd></div>
+                                        <div><dt>Average Error (MAE)</dt><dd>{formatValue(data.chart.validation.mae, target)}</dd></div>
                                         <div><dt>Error Variation (RMSE)</dt><dd>{formatValue(data.chart.validation.rmse, target)}</dd></div>
+                                        <div><dt>Benchmark: repeat last month (MAE)</dt><dd>{formatValue(data.chart.validation.baselineMae, target)} · RMSE {formatValue(data.chart.validation.baselineRmse, target)}{data.chart.validation.baselineMape == null ? '' : ` · MAPE ${formatPercent(data.chart.validation.baselineMape).replace('+', '')}`}</dd></div>
+                                        <div><dt>Versus benchmark</dt><dd>{data.chart.validation.improvementVsBaseline == null ? 'Not available' : data.chart.validation.beatsBaseline ? `${formatPercent(data.chart.validation.improvementVsBaseline)} lower error (better)` : `${formatPercent(Math.abs(data.chart.validation.improvementVsBaseline)).replace('+', '')} higher error (worse)`}</dd></div>
                                         <div><dt>Available history</dt><dd>{data.chart.coverage.calendarMonths} monthly records · {data.chart.coverage.activeMonths} active</dd></div>
                                     </dl>
                                     <div className="rd-table-wrap"><table className="rd-table predictive-table"><thead><tr><th>Test month</th><th>Actual sales</th><th>Predicted sales</th></tr></thead><tbody>{rowsForPage(data.chart.validation.points, reliabilityPage).map(point => <tr key={point.month}><td>{monthLabel(point.month)}</td><td>{formatValue(point.actual, target)}</td><td>{formatValue(point.predicted, target)}</td></tr>)}</tbody></table></div>
-                                    <p className="predictive-method-note">Average Error % (MAPE) evaluates model accuracy against actual historical sales. Lower percentages indicate more dependable forecasts.</p>
+                                    <p className="predictive-method-note">Average Error % (MAPE) evaluates model accuracy against actual historical sales. A forecast is only useful if it beats the benchmark of repeating the last observed month; compare the two rows above.</p>
                                 </> : data.chart.status === 'available' ? <div className="predictive-inline-warning" role="status"><strong>Limited historical testing data</strong><p>{data.chart.coverage.calendarMonths} consecutive months can produce an early projection, but additional monthly records are needed for a full historical accuracy test. Treat this projection as an initial estimate.</p></div> : <EmptyState message={data.chart.reason || 'An accuracy test is not available for this scope.'} />}
                                 </div>
                                 {data.chart.validation && <SectionPagination total={data.chart.validation.points.length} page={reliabilityPage} setPage={setReliabilityPage} label="Forecast reliability" always />}
@@ -515,14 +634,14 @@ export default function PredictiveAnalytics({ scope = DEFAULT_SCOPE, active = tr
                                 <div className="rd-card-head">
                                     <div>
                                         <h3>Expected Demand Range (Lower & Upper)</h3>
-                                        <p>Expected monthly demand alongside estimated lower and upper range variations.</p>
+                                        <p>Projected monthly demand alongside an indicative lower and upper range.</p>
                                     </div>
                                 </div>
                                 <div className="forecast-panel-scroll">
                                 {data.chart.status === 'available' ? <>
                                     <div className="predictive-range-summary"><span>Projected for final month · {monthLabel(data.chart.forecast.at(-1).month)}</span><strong>{formatValue(data.chart.forecast.at(-1).value, target)}</strong><small>{formatValue(data.chart.forecast.at(-1).lower, target)} – {formatValue(data.chart.forecast.at(-1).upper, target)}</small></div>
                                     <div className="rd-table-wrap"><table className="rd-table predictive-table"><thead><tr><th>Month</th><th>Projected demand</th><th>Lower range</th><th>Upper range</th></tr></thead><tbody>{rowsForPage(data.chart.forecast, rangePage).map(row => <tr key={row.month}><td>{monthLabel(row.month)}</td><td>{formatValue(row.value, target)}</td><td>{formatValue(row.lower, target)}</td><td>{formatValue(row.upper, target)}</td></tr>)}</tbody></table></div>
-                                    <p className="predictive-method-note">{data.chart.forecast[0]?.rangeMethod === 'backtest_rmse' ? 'Projected demand reflects sales under typical conditions. The lower and upper bounds show the expected variation range based on past sales patterns.' : 'This illustrative range uses historical variability with a 25% minimum buffer to show potential demand swings.'}</p>
+                                    <p className="predictive-method-note">{data.chart.forecast[0]?.rangeMethod === 'backtest_rmse' ? 'Indicative range: the projection plus or minus the backtest RMSE multiplied by the square root of the months ahead. It is not a 95% prediction interval, and actual demand can fall outside it.' : 'This illustrative range uses historical variability with a 25% minimum buffer to show potential demand swings.'}</p>
                                 </> : <EmptyState message={data.chart.reason || 'A forecast range is unavailable for this scope.'} />}
                                 </div>
                                 <SectionPagination total={data.chart.forecast?.length || 0} page={rangePage} setPage={setRangePage} label="Forecast range" always />
@@ -536,39 +655,31 @@ export default function PredictiveAnalytics({ scope = DEFAULT_SCOPE, active = tr
                 </div>
             )}
         </>}
+        <button type="button" className="predictive-page-refresh" onClick={regenerate} disabled={loading}>
+            {loading ? 'Refreshing…' : 'Refresh data'}
+        </button>
     </div>;
 }
 
-function Kpi({ label, value, detail, action, specificValue, meaning, guidance }) {
+function Kpi({ label, value, detail, meaning }) {
     return (
         <div className="rd-kpi predictive-kpi-card" tabIndex="0">
             <div>
                 <div className="predictive-kpi-header">
                     <small>{label}</small>
                     {meaning && (
-                        <span className="predictive-kpi-info-icon" title="Hover for specific metric meaning">
+                        <span className="predictive-kpi-info-icon" title={`More about ${label}`}>
                             <FaInfoCircle />
                         </span>
                     )}
                 </div>
                 <strong>{value}</strong>
                 <span>{detail}</span>
-                {action}
             </div>
             {meaning && (
                 <div className="predictive-card-hover-popover" role="tooltip">
-                    <div className="predictive-popover-title">
-                        <FaLightbulb />
-                        <strong>Meaning of {specificValue || value}</strong>
-                    </div>
-                    <p className="predictive-popover-meaning">
-                        <b>Specific Meaning:</b> {meaning}
-                    </p>
-                    {guidance && (
-                        <p className="predictive-popover-guidance">
-                            <b>What to do:</b> {guidance}
-                        </p>
-                    )}
+                    <div className="predictive-popover-title"><strong>{label}</strong></div>
+                    <p className="predictive-popover-meaning">{meaning}</p>
                 </div>
             )}
         </div>
@@ -654,7 +765,7 @@ function EmptyState({ message }) {
     return <p className="predictive-empty">{message}</p>;
 }
 
-function ForecastChart({ result, target }) {
+export function ForecastChart({ result, target }) {
     const [xInterval, setXInterval] = useState('monthly');
     const [yInterval, setYInterval] = useState('auto');
     const [zoom, setZoom] = useState(1);
@@ -721,8 +832,11 @@ function ForecastChart({ result, target }) {
             return `${command} ${xPosition(index)} ${yPosition(point.value)}`;
         }).filter(Boolean).join(' ');
     };
-    const forecastLine = forecast.length && history.length
-        ? [{ ...history.at(-1) }, ...forecast].map((point, index) => `${xPosition(history.length - 1 + index)},${yPosition(point.value)}`).join(' ')
+    // Start the forecast line at the last month with real sales; closure months at the end of the history have no value.
+    const lastObservedIndex = history.reduce((found, point, index) => point.value == null ? found : index, -1);
+    const columnWidth = (plotWidth - 110) / Math.max(1, points.length - 1);
+    const forecastLine = forecast.length && lastObservedIndex >= 0
+        ? [`${xPosition(lastObservedIndex)},${yPosition(history[lastObservedIndex].value)}`, ...forecast.map((point, index) => `${xPosition(history.length + index)},${yPosition(point.value)}`)].join(' ')
         : '';
     const band = forecast.length ? [
         ...forecast.map((point, index) => `${xPosition(history.length + index)},${yPosition(point.upper)}`),
@@ -747,6 +861,7 @@ function ForecastChart({ result, target }) {
                     <svg className="predictive-chart" style={{ width: zoom > 1 ? `${plotWidth}px` : '100%', height: expanded ? 'min(62vh, 560px)' : undefined }} viewBox={`0 0 ${plotWidth} ${plotHeight}`} role="img" aria-label={`Historical and forecast monthly ${target} for the selected scope`}>
                         {yTicks.map(value => <g key={`y-${value}`}><line x1="64" x2={plotWidth - 26} y1={yPosition(value)} y2={yPosition(value)} className="predictive-chart-grid" /><text x="56" y={yPosition(value) + 4} textAnchor="end">{formatValue(value, target)}</text></g>)}
                         {band && <polygon points={band} className="predictive-chart-band" />}
+                        {history.map((point, index) => point.closure ? <rect key={`closure-${point.month}`} x={xPosition(index) - columnWidth / 2} y={plotTop} width={columnWidth} height={plotBottom - plotTop} fill="currentColor" opacity="0.08"><title>{`${formatPeriod(point.month)}: shop closed, left out of model training`}</title></rect> : null)}
                         <path d={makeLine(history)} className="predictive-chart-history" />
                         {forecastLine && <polyline points={forecastLine} className="predictive-chart-forecast" />}
                         {history.map((point, index) => point.value == null ? null : <circle key={`actual-${point.month}`} cx={xPosition(index)} cy={yPosition(point.value)} r="4" tabIndex="0" aria-label={`Actual, ${formatPeriod(point.month)}, ${formatValue(point.value, target)}`} onPointerEnter={() => setHoveredPoint({ point, kind: 'Actual' })} onPointerLeave={() => setHoveredPoint(null)} onFocus={() => setHoveredPoint({ point, kind: 'Actual' })} onBlur={() => setHoveredPoint(null)} className="predictive-chart-actual"><title>{`${formatPeriod(point.month)} · Actual · ${formatValue(point.value, target)}`}</title></circle>)}
@@ -756,7 +871,7 @@ function ForecastChart({ result, target }) {
                     </svg>
                 </div>
             </div>
-            <div className="predictive-chart-legend"><span><i className="history-key" />Historical demand</span><span><i className="forecast-key" />Forecast demand</span><span><i className="range-key" />{forecast[0]?.rangeMethod === 'backtest_rmse' ? 'Expected variation range' : 'Estimated range'}</span></div>
+            <div className="predictive-chart-legend"><span><i className="history-key" />Historical demand</span><span><i className="forecast-key" />Forecast demand</span><span><i className="range-key" />{forecast[0]?.rangeMethod === 'backtest_rmse' ? 'Indicative range (±RMSE·√months ahead)' : 'Estimated range'}</span></div>
             <p className="predictive-chart-caption">Forecast starts in {forecast[0] ? monthLabel(forecast[0].month) : 'the month after the last actual observation'}. Hover or focus a point for its month, year, value{forecast.length ? ', and forecast range' : ''}. X-axis labels do not change the monthly data.</p>
         </div>
     </>;
