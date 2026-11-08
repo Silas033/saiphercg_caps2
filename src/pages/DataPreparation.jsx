@@ -19,6 +19,7 @@ import {
     FaChevronRight,
     FaPlay,
     FaSyncAlt,
+    FaCloudUploadAlt,
     FaArrowRight
 } from "react-icons/fa";
 
@@ -213,6 +214,8 @@ export default function DataPreparation({ setActivePage }) {
     const [loading, setLoading] = useState(true);
     const [running, setRunning] = useState(false);
     const [syncing, setSyncing] = useState(false);
+    const [uploading, setUploading] = useState(false);
+    const [uploaded, setUploaded] = useState(false);
     const [syncMessage, setSyncMessage] = useState("");
     const [error, setError] = useState("");
     const [modal, setModal] = useState(null);
@@ -324,22 +327,33 @@ export default function DataPreparation({ setActivePage }) {
         setSyncMessage("");
 
         try {
-            const result = await getJson("/preparation/run", { method: "POST" });
-            if (result?.supabaseSync?.success) clearAnalyticsMemoryCache();
+            await getJson("/preparation/run", { method: "POST" });
+            setUploaded(false);
             setDuplicateReviewed(false);
             setStatusReviewed(false);
             setReturnsReviewed(false);
             await loadPreparationData();
 
-            if (result?.supabaseSync?.success === false) {
-                setError(`Data prepared locally, but Supabase sync failed: ${result.supabaseSync.error}`);
-            } else if (result?.supabaseSync?.warning) {
-                setError(result.supabaseSync.warning);
-            }
         } catch (err) {
             setError(err.message);
         } finally {
             setRunning(false);
+        }
+    }
+
+    async function uploadPreparedData() {
+        setUploading(true);
+        setError("");
+        setSyncMessage("");
+        try {
+            const result = await getJson("/preparation/upload", { method: "POST" });
+            clearAnalyticsMemoryCache();
+            setUploaded(true);
+            setSyncMessage(`Uploaded ${formatNumber(result.insertedRecords)} prepared records to Supabase successfully.`);
+        } catch (err) {
+            setError(err.message);
+        } finally {
+            setUploading(false);
         }
     }
 
@@ -446,11 +460,15 @@ export default function DataPreparation({ setActivePage }) {
                     <p>Review, clean, and standardize your transaction records for reporting and forecasting.</p>
                 </div>
                 <div className="prep-header-actions">
-                    <button className="outline-button" type="button" onClick={syncDatabase} disabled={syncing || running || loading} title="Read the current records from Supabase without running data preparation.">
+                    <button className="outline-button" type="button" onClick={syncDatabase} disabled={syncing || running || uploading || loading} title="Read the current records from Supabase without running data preparation.">
                         <FaSyncAlt />
                         {syncing ? "Syncing Database..." : "Sync Database"}
                     </button>
-                    <button className="primary-button" type="button" onClick={() => setModal("confirm-preparation")} disabled={running || syncing || loading}>
+                    <button className="outline-button" type="button" onClick={uploadPreparedData} disabled={uploading || uploaded || running || syncing || loading || !preparationState?.prepared} title="Upload the latest successfully prepared dataset to Supabase.">
+                        <FaCloudUploadAlt />
+                        {uploading ? "Uploading Prepared Data..." : uploaded ? "Prepared Data Uploaded" : "Push Prepared Data to Supabase"}
+                    </button>
+                    <button className="primary-button" type="button" onClick={() => setModal("confirm-preparation")} disabled={running || syncing || uploading || loading}>
                         <FaPlay />
                         {running ? "Preparing Dataset..." : "Run Data Preparation"}
                     </button>

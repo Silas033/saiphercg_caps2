@@ -17,3 +17,5 @@ For local development, run `npm run server` and `npm run dev`. Vite proxies `/ap
 Validation: `node --test server/analytics.test.js` and `npm run build`. The connected dataset at implementation time had 2,940 master rows, 2,934 eligible rows, PHP 569,845 revenue, 1,873 distinct orders, and 5,368 net units; live Supabase and local prepared aggregates matched exactly. Live verification was read-only; upload/cache behavior is tested with an in-memory database double.
 
 The existing upload process replaces rows in batches rather than a database transaction. The cache guard protects this server during that operation; multi-instance atomic replacement would require a database-side transaction or versioned dataset publication.
+
+Run Data Preparation only writes the prepared dataset locally. The Data Preparation page's **Push Prepared Data to Supabase** action uploads it explicitly. Upload requires a successful current preparation and an empty master_transactions table; it never deletes or overwrites existing master rows. Existing data must be deliberately cleared or archived before a replacement dataset is loaded.

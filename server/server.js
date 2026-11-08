@@ -1522,47 +1522,11 @@ app.post(
             const result =
                 preparation.run();
 
-
-            /*
-              After the local ETL finishes, immediately push
-              the prepared master data to Supabase as well.
-              If this fails, the local preparation result is
-              still returned, but flagged with the sync error
-              so the UI can surface it instead of silently
-              losing the data.
-            */
-
-            let supabaseSync = null;
-
-            try {
-
-                supabaseSync =
-                    await syncPreparedMasterData();
-
-            } catch (syncError) {
-
-                console.error(
-                    "Supabase sync error (during preparation run):",
-                    syncError
-                );
-
-                supabaseSync = {
-
-                    success: false,
-
-                    error:
-                        syncError.message
-                };
-            }
-
-
             res.json({
 
                 success: true,
 
-                ...result,
-
-                supabaseSync
+                ...result
             });
 
 
@@ -1586,6 +1550,26 @@ app.post(
 );
 
 
+app.post("/api/preparation/upload", async (req, res) => {
+    try {
+        if (!supabase) return res.status(503).json({ success: false, error: "Supabase is not configured. Check SUPABASE_URL and SUPABASE_SECRET_KEY in .env." });
+        const state = preparation.status();
+        const summary = preparation.masterSummary();
+        if (!state.prepared || !state.runId || !summary.prepared || !summary.records) {
+            return res.status(409).json({ success: false, error: "Run Data Preparation successfully before uploading." });
+        }
+        const { count, error } = await supabase.from("master_transactions").select("id", { count: "exact", head: true });
+        if (error) throw new Error(`Could not check existing Supabase records: ${error.message}`);
+        if (count > 0) {
+            return res.status(409).json({ success: false, error: `Upload stopped: master_transactions already contains ${count} records. Existing data was left unchanged. Clear or archive it before uploading a replacement dataset.` });
+        }
+        const result = await syncPreparedMasterData();
+        res.json(result);
+    } catch (error) {
+        console.error("Prepared data upload error:", error);
+        res.status(409).json({ success: false, error: error.message });
+    }
+});
 app.get(
     "/api/preparation/master-summary",
 
@@ -1960,6 +1944,18 @@ async function uploadPreparedMasterData() {
     }
 
 
+    const preparationStatus = preparation.status();
+    if (!preparationStatus.prepared || !preparationStatus.runId || prepared.some(row => row.etl_run_id !== preparationStatus.runId)) {
+        throw new Error("The prepared dataset is incomplete or no longer matches the latest successful preparation. Run Data Preparation again.");
+    }
+
+    const { count: existingCount, error: existingCountError } = await supabase
+        .from("master_transactions")
+        .select("id", { count: "exact", head: true });
+    if (existingCountError) throw new Error(`Could not check existing Supabase records: ${existingCountError.message}`);
+    if (existingCount > 0) {
+        throw new Error(`Upload stopped: master_transactions already contains ${existingCount} records. Existing data was left unchanged. Clear or archive it before uploading a replacement dataset.`);
+    }
     /*
       Generate a real UUID for the Supabase ETL run.
       This works whether your etl_run_id column is
@@ -1974,40 +1970,14 @@ async function uploadPreparedMasterData() {
         `Starting Supabase sync. Run: ${syncRunId}`
     );
 
+    const dimensionWarnings = await syncDimensionTables();
+    if (dimensionWarnings.length) throw new Error(dimensionWarnings.join(" | "));
 
-    /*
-      ----------------------------------------------------
-      STEP 1
-      Remove the previous master dataset.
-      ----------------------------------------------------
+    const { error: runStartError } = await supabase
+        .from("etl_runs")
+        .insert({ run_id: syncRunId, status: "running" });
+    if (runStartError) throw new Error(`Supabase could not start ETL run: ${runStartError.message}`);
 
-      created_at is NOT NULL with the SQL structure
-      previously provided, so this removes all rows.
-    */
-
-    const {
-        error:
-            deleteError
-    } =
-        await supabase
-            .from(
-                "master_transactions"
-            )
-            .delete()
-            .gte(
-                "created_at",
-                "1900-01-01T00:00:00.000Z"
-            );
-
-
-    if (
-        deleteError
-    ) {
-
-        throw new Error(
-            `Supabase could not clear master_transactions: ${deleteError.message}`
-        );
-    }
 
 
     /*
@@ -2078,19 +2048,6 @@ async function uploadPreparedMasterData() {
             `Supabase sync progress: ${inserted}/${prepared.length}`
         );
     }
-
-
-    /*
-      ----------------------------------------------------
-      STEP 2.5
-      Sync the product and geography dimension tables.
-      Non-fatal: master_transactions has already synced
-      successfully by this point.
-      ----------------------------------------------------
-    */
-
-    const dimensionWarnings =
-        await syncDimensionTables();
 
 
     /*
@@ -2208,6 +2165,9 @@ async function uploadPreparedMasterData() {
 
                     run_id:
                         syncRunId,
+
+                    status:
+                        "completed",
 
                     source_file_count:
                         new Set(
